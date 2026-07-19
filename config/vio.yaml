@@ -1,0 +1,57 @@
+# OAK-D VIO config for QB3rt - stock depthai vio.yaml plus two safe changes:
+#   1. frame rate reduced (60 -> 12 fps) for RB3 Gen2 stability under sustained
+#      load while preserving enough visual updates for robust indoor SLAM.
+#   2. vio.i_publish_tf: false  -> the VIO no longer broadcasts its own
+#      odom->oak_parent_frame TF. The EKF (odometry.launch.py) owns
+#      odom->base_footprint, and the camera is instead rigidly attached to the
+#      robot via a static main_camera_frame->oak_parent_frame transform in
+#      perception.launch.py. The /oak/vio/odometry TOPIC is unaffected (i_publish_tf
+#      gates only the TF broadcaster), so the EKF still gets odom0.
+#
+# DELIBERATELY MINIMAL on the PIPELINE side: do NOT add per-sensor sections
+# (rgb/left/right) or i_publish_topic / i_resolution overrides - every such
+# variant segfaulted this OAK-D-LITE's pipeline builder (exit -11 at "Pipeline
+# type: rgbd"). i_publish_tf is a ROS-side TF toggle, not a pipeline param, so it
+# does not touch the pipeline builder.
+#
+# Used by QB3rt/launch/perception.launch.py (params_file).
+/oak:
+  ros__parameters:
+    driver:
+      i_enable_ir: false
+    pipeline_gen:
+      i_nn_type: none
+      i_pipeline_type: rgbd
+      i_enable_vio: true
+    vio:
+      i_fps: 15.0
+      # Don't broadcast odom->oak_parent_frame; EKF owns odom->base_footprint and
+      # the camera is mounted under base_link via a static TF (see perception.launch.py).
+      i_publish_tf: false
+      i_config_path: /usr/share/QB3rt/config/basalt_vio_rb3.json
+    stereo:
+      i_depth_preset: DEFAULT
+      i_fps: 15.0
+      # Keep stereo/depth timestamps tightly aligned with the RGBD pipeline.
+      i_synced: true
+    rgb:
+      # Pin RGB publish rate to match RB3 target throughput.
+      i_fps: 15.0
+      # Stability-first profile: prefer deterministic pairing over peak throughput.
+      i_synced: true
+    left:
+      # Keep the left mono sensor on fixed exposure and fixed focus.
+      r_set_man_exposure: true
+      r_exposure: 3000
+      r_iso: 1600
+    right:
+      # Keep the right mono sensor matched to the left sensor.
+      r_set_man_exposure: true
+      r_exposure: 3000
+      r_iso: 1600
+      r_set_man_focus: true
+    imu:
+      # Minimize batching latency/jitter for steadier VIO integration timing.
+      i_batch_report_threshold: 1
+      i_max_batch_reports: 1
+      i_enable_rotation: false

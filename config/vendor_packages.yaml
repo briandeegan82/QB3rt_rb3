@@ -1,0 +1,22 @@
+vendor_packages:
+  base_driver:
+    package: wave_rover_controller
+    launch: wave_rover_launch.py
+  lidar:
+    package: rplidar_ros
+    launch: rplidar_c1_launch.py
+  camera:
+    # RB3 Gen2 OV9282 mono "tracking" camera (cameraId 1) via the Qualcomm HW ISP.
+    # Actual VIO bring-up is QB3rt's launch/rb3_vio.launch.py; this stock launch is
+    # the plain-camera reference. (Replaced the external OAK-D / depthai_ros_driver_v3.)
+    package: qrb_ros_camera
+    launch: qrb_ros_camera_launch.py
+  imu:
+    package: rb3_imu_bringup
+    launch: imu.launch.py
+  slam:
+    package: slam_toolbox
+    launch: online_async_launch.py
+  navigation:
+    package: nav2_bringup
+    launch: bringup_launch.py

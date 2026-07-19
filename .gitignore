@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# ROS / colcon build products
+build/
+install/
+log/
+.colcon/
+
+# Ament install-space leftovers (not source; regenerates on install)
+local_setup.*
+package.bash
+package.dsv
+package.sh
+package.zsh
+/environment/
+/hook/
+/cmake/
+
+# Calibration / experiment run outputs (workspace-only; see deploy.sh)
+results/
+
+# ROS bags, maps, and large runtime dumps
+*.bag
+*.bag.active
+*.db3
+*.pcd
+*.ot
+*.bt
+*.pgm
+*.yaml.map
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Deploy preflight scratch
+.deploy_write_test

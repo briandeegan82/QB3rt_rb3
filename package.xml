@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>QB3rt</name>
+  <version>0.1.0</version>
+  <description>Teaching AGV platform: robot description assets and launch orchestration.</description>
+
+  <maintainer email="QB3rt@example.com">QB3rt Team</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <!-- RB3 Gen2 mono-inertial VIO (OV9282 + IMU -> ORB-SLAM3 -> EKF). -->
+  <exec_depend>qrb_ros_camera</exec_depend>
+  <exec_depend>qrb_ros_imu</exec_depend>
+  <exec_depend>orb_slam3_ros</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

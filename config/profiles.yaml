@@ -1,0 +1,13 @@
+profiles:
+  base:
+    launch: base.launch.py
+  odometry:
+    launch: odometry.launch.py
+  lidar_slam:
+    launch: lidar_slam.launch.py
+  nav:
+    launch: nav.launch.py
+  perception:
+    launch: perception.launch.py
+  full_stack:
+    launch: full_stack.launch.py

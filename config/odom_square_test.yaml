@@ -1,0 +1,82 @@
+odom_square_test:
+  ros__parameters:
+    # --- What/where to drive ---
+    cmd_vel_topic: /cmd_vel
+    side_length: 1.0        # metres per straight leg
+    num_sides: 4            # 4 = square
+    linear_speed: 0.15      # commanded m/s on the straights
+    angular_speed: 0.4      # commanded rad/s during turns (higher = tighter arc)
+    # Forward speed held DURING turns. Skid-steer can't reliably pivot in place
+    # (4-wheel scrub), so corners are arcs: roll forward while steering.
+    # Corner radius = turn_linear_speed / angular_speed (0.20/0.4 ~ 0.5 m).
+    # The inside wheel keeps rolling only while it stays above the deadband floor:
+    #   inside ~ (turn_linear_speed - angular_speed*spin_boost*track_width/2)/max_speed
+    # NOTE: higher angular_speed tightens the arc but LOWERS the inside-wheel
+    # margin. With spin_boost 4.0 keep angular_speed <= ~0.5, else the inside
+    # wheel drops under the floor and the turn just scrubs (or reverses).
+    turn_linear_speed: 0.20
+    turn_angle: 1.5708      # radians per corner (pi/2 = 90 deg)
+    publish_rate: 20.0      # cmd_vel publish rate (Hz)
+    settle_time: 1.5        # pause (s) between phases so poses settle
+    direction: ccw          # 'ccw' (+z, left) or 'cw' (-z, right)
+
+    # --- Odometry sources to record/compare ---
+    #   /odometry/filtered  EKF fused estimate
+    #   /vio/odometry        RB3 ORB-SLAM3 mono-inertial VIO (independent ground truth)
+    #   /odom               wave_rover_bridge dead-reckoning (command echo)
+    odom_topics:
+      - /odometry/filtered
+      - /vio/odometry
+      - /odom
+
+    # Where JSON summary + per-source CSV trajectories are written.
+    # Empty/omitted -> defaults to <package>/results.
+    output_dir: ""
+
+    # --- Mode ---
+    # 'square'   : N-sided square accuracy test (default)
+    # 'straight' : one straight leg -> measure speed / max_speed
+    # 'deadband' : ramp motor fraction -> recommend motor_deadband
+    # 'speed'    : sweep motor fractions -> recommend max_speed
+    # 'turn'     : drive an arc of a known angle -> recommend spin_boost_k / max
+    # 'trim'     : drive one straight leg -> recommend straight_trim (heading drift)
+    # 'vio_check': no motion; print VIO net displacement for a hand push
+    # 'turn_check': no motion; print cumulative EKF yaw for a hand rotation
+    # 'oneside'  : drive one side full, other static -> measure turn (sanity check)
+    mode: square
+    driver_max_speed: 0.56    # MUST match wave_rover_bridge.yaml's max_speed
+    driver_spin_boost_max: 10.0  # MUST match wave_rover_bridge.yaml spin_boost_max
+    driver_spin_boost_k: 1.4     # MUST match wave_rover_bridge.yaml spin_boost_k
+    driver_straight_trim: 0.12  # MUST match wave_rover_bridge.yaml's straight_trim (mode=trim)
+    driver_node: waverover_bridge  # bridge node name (for live param setting)
+
+    # --- Deadband sweep (mode=deadband) ---
+    deadband_start: 0.0     # raw motor fraction to start sweep
+    deadband_step: 0.02     # increment
+    deadband_max: 0.6       # max fraction to test
+    step_hold: 2.5          # seconds to hold each step
+    move_threshold: 0.02    # metres of motion to count as 'moved'
+
+    # --- Speed sweep (mode=speed) ---
+    speed_start: 0.25       # raw motor fraction to start sweep
+    speed_step: 0.25        # increment
+    speed_max: 1.0          # max fraction (1.0 = full output)
+    speed_hold: 3.5         # seconds to hold each step (long baseline for VIO)
+    accel_skip: 0.8         # seconds to skip before measuring (accel transient)
+    speed_alternate: false  # false = one direction (reliable); true = oscillate
+
+    # --- Arc turn (mode=turn) ---
+    turn_target: 6.2832     # radians to rotate (2*pi = one full revolution)
+    # Settle (s) after the turn before reading heading, so the coast-to-rest and
+    # EKF orientation lag are captured (else the measured rotation reads low).
+    turn_settle: 1.0
+    # uses angular_speed (above) as the commanded turn rate
+
+    # --- One-side drive test (mode=oneside) ---
+    # Drives one wheel side at full and the other at exactly zero (the bridge's
+    # deadband + straight_trim are auto-zeroed for the run so the static side
+    # truly stops). spin_boost/track_width are folded into the commanded twist.
+    oneside_side: left        # which side drives full: 'left' (->cw) or 'right' (->ccw)
+    oneside_duration: 2.0     # seconds to hold the one-side drive
+    driver_track_width: 0.15  # MUST match wave_rover_bridge.yaml's track_width
+    # also uses turn_settle (above) as the post-drive coast/settle window

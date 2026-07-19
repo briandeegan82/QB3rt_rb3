@@ -1,0 +1,6 @@
+# AGV serial devices — pin stable names by adapter serial number.
+# Both boards use identical Silicon Labs CP2102N bridges (10c4:ea60), so the
+# kernel's ttyUSB0/ttyUSB1 assignment depends on USB enumeration order and can
+# swap between boots. These symlinks make the names deterministic.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="825892601e0bee1198824502f59e3369", SYMLINK+="rplidar"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="706dc0a6f9d9ef1196234f3dc8728757", SYMLINK+="wave_rover"

@@ -1,0 +1,11 @@
+frames:
+  base_frame: base_link
+  base_footprint_frame: base_footprint
+  odom_frame: odom
+  map_frame: map
+  laser_frame: laser_frame
+  main_camera_frame: main_camera_frame
+  tracking_camera_frame: tracking_camera_frame
+  camera_frame: camera_frame
+  imu_frame: imu_link
+  rb3_base_frame: rb3_base_link

@@ -1,0 +1,100 @@
+# Calibrated cmd_vel bridge parameters (nodes/wave_rover_bridge.py).
+#
+# CANONICAL COPY: /root/QB3rt/vendor_overrides/wave_rover_controller/.
+# deploy.sh installs it to /usr/share/wave_rover_controller/config/ - edits
+# made there directly are overwritten on deploy and LOST ON REFLASH.
+#
+# Calibration values from docs/odometry_calibration.md (2026-06-29 campaign,
+# exponential turn gain 2026-07-19): recalibrate with odom_square_test.launch.py
+# and keep the mirrors in config/odom_square_test.yaml (driver_max_speed /
+# driver_spin_boost_max / driver_spin_boost_k / driver_track_width) in sync.
+
+/**:
+  ros__parameters:
+    # Transport: 'serial' (USB/UART) or 'http' (WiFi).
+    # SERIAL on this robot: the base is wired over USB, which keeps the motor
+    # path independent of WiFi (the UGV AP at 192.168.4.1 is not reachable from
+    # the RB3's network — HTTP mode just times out and nothing drives).
+    transport: serial
+
+    # --- Serial transport ---
+    # /dev/wave_rover is a stable udev symlink pinned to the rover board's
+    # CP2102N serial number (/etc/udev/rules.d/99-agv-serial.rules). Do NOT use
+    # /dev/ttyUSB0/1 - the lidar has an identical adapter and the kernel
+    # ordering swaps between boots (the lidar is /dev/rplidar, same rules file).
+    serial_port: /dev/wave_rover
+    baud_rate: 115200
+
+    # --- HTTP transport (unused; kept for reference) ---
+    # IP of the Wave Rover.
+    #   AP mode  (rover's own hotspot "UGV", pw 12345678): 192.168.4.1
+    #   STA mode (joined your router): the IP shown on the rover's OLED
+    rover_ip: 192.168.4.1
+    # Per-command HTTP timeout, seconds.
+    request_timeout: 0.2
+
+    # --- Calibrated skid-steer drive model ---
+    # Effective wheel separation, metres.
+    track_width: 0.15
+    # Ground speed (m/s) at full motor output (V_full, mode:=straight).
+    # 0.56 (was 0.42, recalibrated 2026-07-13 by TAPE MEASURE over the serial
+    # transport): full-throttle 3.85 s run taped 2.15 m for a commanded 2.0 m
+    # at max_speed 0.52 -> 0.52 * 2.15/2.0 = 0.56. The 2026-06-29 HTTP-era
+    # 0.42 baked WiFi latency/drops in as drivetrain slowness. Ruler is the
+    # tape, NOT VIO (VIO is unreliable while driving on the floor).
+    max_speed: 0.56
+    # Static-friction breakaway fraction (mode:=deadband). Small commands are
+    # lifted onto this floor by the affine feedforward.
+    motor_deadband: 0.12
+    # Left/right imbalance trim at straight_trim_ref_speed; + curves left (rover
+    # veered right). Speed-scheduled by straight_trim_slope (below).
+    straight_trim: 0.12
+    # Trim speed schedule: trim change per m/s of |linear.x| away from
+    # straight_trim_ref_speed. Drift is not a constant fraction of speed (it
+    # grows toward full throttle: ~1.5 deg/2 m at 0.3 m/s, ~17 deg at full), so a
+    # constant trim can't zero it everywhere. 0.0 = constant trim (baseline).
+    # Calibrate: run odom_square_test mode:=trim at two linear_speed values
+    # v1 < v2 and set straight_trim_slope = (trim_v2 - trim_v1) / (v2 - v1).
+    straight_trim_slope: 0.0
+    straight_trim_ref_speed: 0.20
+    # Exponential skid-steer turn gain (2026-07-19):
+    #   boost(|v|) = 1 + (spin_boost_max - 1) * exp(-spin_boost_k * |v|)
+    # Peak at standstill (crawl-turn authority); decays toward 1 as speed rises.
+    # spin_boost_max 10.0 / spin_boost_k 1.4 (2026-07-19): more crawl-turn
+    # authority and slower decay than the 8.0/1.7 starter. On carpet, crawl
+    # turns sit above the ~6.7 anchor / >=9 stall regime — watch for pinning.
+    # Recalibrate with mode:=turn at two turn_linear_speed values.
+    spin_boost_max: 10.0
+    spin_boost_k: 1.4
+    # Firmware T:1 full-scale. The encoder-less WAVE ROVER takes -0.5..0.5
+    # (0.5 = 100% PWM); beyond 0.5 it slows/stalls. DO NOT CHANGE.
+    motor_cmd_max: 0.5
+
+    # Stop the rover if no cmd_vel arrives within this many seconds (0.0 = off).
+    cmd_timeout: 0.5
+
+    # --- Odometry ---
+    odom_frame: odom
+    base_frame: base_link
+    # FALSE: the robot_localization EKF (ekf.yaml, base_link_frame=
+    # base_footprint) owns odom->base_footprint. If this bridge also published
+    # odom->base_link, base_link would get two parents, orphaning
+    # base_footprint and giving Nav2 a wheel-odom-only pose that fights the
+    # fused VIO+IMU EKF.
+    publish_tf: false
+
+    # --- Tank-drive joystick (sensor_msgs/Joy) ---
+    # Hold joy_deadman_button to take direct per-wheel control via the sticks.
+    # Releasing the button hands control back to cmd_vel (Nav2 / teleop_twist_joy).
+    # Set joy_deadman_button to -1 to require no button (always active).
+    #
+    # Microntek USB Joystick axis layout:
+    #   0 = left stick X    1 = left stick Y
+    #   2 = right stick X   3 = right stick Y
+    #   4 = d-pad X         5 = d-pad Y
+    # Scale of -1.0 corrects the convention that stick-up reports as -1.
+    joy_left_axis: 1
+    joy_left_scale: -1.0
+    joy_right_axis: 3
+    joy_right_scale: -1.0
+    joy_deadman_button: 5    # RB — matches existing teleop enable_button

@@ -1,0 +1,129 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="teaching_QB3rt">
+  <!-- Dimensions are based on the provided drawing (mm -> m), with simple approximations. -->
+  <xacro:property name="chassis_length" value="0.180"/>
+  <xacro:property name="chassis_width" value="0.165"/>
+  <xacro:property name="chassis_height" value="0.090"/>
+  <xacro:property name="ground_clearance" value="0.0397"/>
+  <xacro:property name="wheel_radius" value="0.050"/>
+  <xacro:property name="wheel_width" value="0.0425"/>
+  <xacro:property name="wheelbase" value="0.097"/>
+  <xacro:property name="track_width" value="0.1405"/>
+  <xacro:property name="body_mass" value="5.5"/>
+  <xacro:property name="wheel_mass" value="0.45"/>
+  <!-- rb3_mount_z: chassis_height/2 (45mm) + 25mm above chassis top = 70mm above base_link -->
+  <xacro:property name="rb3_mount_z" value="0.070"/>
+
+  <xacro:include filename="$(find QB3rt)/urdf/rb3_chassis.urdf.xacro"/>
+
+  <material name="mat_black">
+    <color rgba="0.10 0.10 0.10 1.0"/>
+  </material>
+  <material name="mat_gray">
+    <color rgba="0.45 0.45 0.45 1.0"/>
+  </material>
+
+  <link name="base_footprint"/>
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${ground_clearance + (chassis_height / 2.0)}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="mat_black"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${body_mass}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="0.025" ixy="0.0" ixz="0.0" iyy="0.035" iyz="0.0" izz="0.045"/>
+    </inertial>
+  </link>
+
+  <xacro:macro name="wheel_link" params="name">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="mat_gray"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="0.0008" ixy="0.0" ixz="0.0" iyy="0.0004" iyz="0.0" izz="0.0008"/>
+      </inertial>
+    </link>
+  </xacro:macro>
+
+  <xacro:wheel_link name="front_left_wheel_link"/>
+  <xacro:wheel_link name="front_right_wheel_link"/>
+  <xacro:wheel_link name="rear_left_wheel_link"/>
+  <xacro:wheel_link name="rear_right_wheel_link"/>
+
+  <joint name="front_left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="front_left_wheel_link"/>
+    <origin xyz="${wheelbase / 2.0} ${track_width / 2.0} ${wheel_radius - ground_clearance - (chassis_height / 2.0)}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <joint name="front_right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="front_right_wheel_link"/>
+    <origin xyz="${wheelbase / 2.0} ${-track_width / 2.0} ${wheel_radius - ground_clearance - (chassis_height / 2.0)}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <joint name="rear_left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rear_left_wheel_link"/>
+    <origin xyz="${-wheelbase / 2.0} ${track_width / 2.0} ${wheel_radius - ground_clearance - (chassis_height / 2.0)}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <joint name="rear_right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rear_right_wheel_link"/>
+    <origin xyz="${-wheelbase / 2.0} ${-track_width / 2.0} ${wheel_radius - ground_clearance - (chassis_height / 2.0)}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- rb3 board sits 3cm to the left of the robot centreline (measured) -->
+  <xacro:rb3_chassis parent_link="base_link" prefix="rb3" xyz="0 0.030 ${rb3_mount_z}" rpy="0 0 0"/>
+
+  <link name="laser_frame"/>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_frame"/>
+    <!-- RPLIDAR C1 is physically mounted with its zero-angle reference facing
+         the chassis REAR, not the front as originally assumed here. Confirmed
+         2026-07-13: with Fixed Frame=base_link, an obstacle at the robot's
+         physical front showed up BEHIND the model in the LaserScan display -
+         i.e. scan angle 0 pointed backward. Without this 180 deg yaw, every
+         scan was projected into base_link mirrored front-to-back, so
+         slam_toolbox built a map whose content (walls) was correct in shape
+         but rotated 180 deg from true room layout relative to the
+         (correctly-tracked, wheel+gyro) robot pose - the "forward drives
+         backward on the map" symptom. Wheel odometry / EKF heading were
+         independently verified correct (rotation-sense test) before landing
+         on this fix, so no other code changes were needed. -->
+    <origin xyz="0.0 0.0 0.170" rpy="0 0 ${pi}"/>
+  </joint>
+</robot>

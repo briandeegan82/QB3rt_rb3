@@ -1,0 +1,31 @@
+# OAK-D camera config for rtabmap RGBD SLAM on QB3rt (plain RGBD, no VIO).
+#
+# VIO odometry is provided by ORB-SLAM3 on the RB3's OV9282 camera
+# (rb3_vio.launch.py -> /vio/odometry), NOT by the OAK-D in this stack.
+# This config runs the OAK-D in pure RGBD mode and publishes:
+#   /oak/rgb/image_raw     -> rtabmap rgb/image
+#   /oak/stereo/image_raw  -> rtabmap depth/image
+#
+# WARNING: this OAK-D-LITE was found to segfault when extra per-sensor sections
+# are added (see vio.yaml comments). The stereo/rgb sections below are the minimum
+# needed for synced RGBD output. If the pipeline builder exits -11, try removing
+# them — the rgbd pipeline may publish RGB and depth by default without i_synced.
+/oak:
+  ros__parameters:
+    driver:
+      i_enable_ir: false
+    pipeline_gen:
+      i_nn_type: none
+      i_pipeline_type: rgbd
+      i_enable_vio: false
+    stereo:
+      i_depth_preset: DEFAULT
+      i_fps: 12.0
+      # Let rtabmap approximate-sync instead of driver-level lockstep.
+      i_synced: false
+    rgb:
+      i_fps: 12.0
+      i_synced: false
+      r_set_man_focus: true
+      # Use a fixed RGB focus point for repeatable RTAB-Map features; tune if needed.
+      r_focus: 1

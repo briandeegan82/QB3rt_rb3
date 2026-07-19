@@ -1,0 +1,339 @@
+# Nav2 parameters for the QB3rt skid-steer AGV (LIVE SLAM mode).
+#
+# No amcl / map_server here: slam_toolbox (lidar_slam.launch.py) supplies map->odom
+# and the /map, and the EKF supplies odom->base_footprint. Launched via
+# QB3rt/launch/nav.launch.py -> nav2_bringup/navigation_launch.py.
+#
+# Platform constraints baked in:
+#   - CANNOT pivot in place (4-wheel scrub stalls). Controller = Regulated Pure
+#     Pursuit with use_rotate_to_heading:false; Spin recovery removed (custom BT).
+#   - Small robot: chassis 0.180 x 0.165 m, wheels protrude to +-0.0985/+-0.0915 m
+#     (x/y) -> rectangular footprint, not robot_radius (see costmap sections below).
+#   - Calibrated max ~0.42 m/s; capped to 0.26 m/s for safe indoor nav.
+#   - cmd_vel chain ends at collision_monitor -> /cmd_vel (the wave_rover bridge).
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odometry/filtered
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    # Custom recovery trees WITHOUT the in-place Spin behavior (robot can't pivot).
+    default_nav_to_pose_bt_xml: "$(find-pkg-share QB3rt)/behavior_trees/navigate_to_pose_no_spin.xml"
+    default_nav_through_poses_bt_xml: "$(find-pkg-share QB3rt)/behavior_trees/navigate_through_poses_no_spin.xml"
+    error_code_names:
+      - compute_path_error_code
+      - follow_path_error_code
+
+controller_server:
+  ros__parameters:
+    # 15 Hz is ample for a ~0.25 m/s robot and saves CPU vs the stock 20 Hz.
+    controller_frequency: 15.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    use_realtime_priority: false
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      # Forgiving for a slow skid-steer in tight spaces: only 0.1 m of progress
+      # required within a longer window (stock 0.5 m / 10 s was too aggressive and
+      # tripped "Failed to make progress" when the robot crept).
+      # 8.0 (was 15.0, shortened 2026-07-14 for parity with laptop/
+      # nav2_laptop.yaml): even the slowest realistic creep covers 0.1 m well
+      # within 8 s, so this stays safe against the false-trip concern above
+      # while catching a stuck/oscillating robot roughly twice as fast.
+      required_movement_radius: 0.1
+      movement_time_allowance: 8.0
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.20
+      # Loose: the robot can't pivot to fine-tune final heading, so don't demand it.
+      yaw_goal_tolerance: 0.40
+
+    # Regulated Pure Pursuit: pure path following, no in-place rotation. Ideal for a
+    # skid-steer that can only turn along arcs.
+    FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.22
+      # Longer lookahead -> gentler commanded curvature (bigger arc radius) so RPP
+      # stays within the skid-steer's measured ~0.8 m min turn radius (carpet,
+      # 2026-07-14 spin_boost recalibration) instead of
+      # demanding tight pivots the robot can only scrub through.
+      lookahead_dist: 0.8
+      min_lookahead_dist: 0.6
+      max_lookahead_dist: 1.2
+      lookahead_time: 1.5
+      use_velocity_scaled_lookahead_dist: true
+      transform_tolerance: 0.1
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 0.6
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      # Slow down for sharp curves so arcs stay above the ~0.3 m scrub-floor radius.
+      use_regulated_linear_velocity_scaling: true
+      use_cost_regulated_linear_velocity_scaling: false
+      # 0.5 (was 0.8, reverted 2026-07-14): 0.8 modeled the open-loop
+      # feedforward ceiling as if it were a hard limit; it isn't - RPP's
+      # closed-loop re-aiming absorbs under-rotation on tighter arcs. This
+      # onboard config uses NavfnPlanner (no DUBIN/minimum_turning_radius
+      # constraint), but keep this in sync with laptop/nav2_laptop.yaml's RPP
+      # section for consistent behavior. See that file's comment for the
+      # 2026-07-14 "no valid path found" failure this caused on the Smac side.
+      regulated_linear_scaling_min_radius: 0.5
+      regulated_linear_scaling_min_speed: 0.10
+      # No pivoting: never rotate in place to the path/goal heading.
+      use_rotate_to_heading: false
+      # true (was false, changed 2026-07-14 to match laptop/nav2_laptop.yaml's
+      # DUBIN->REEDS_SHEPP switch): NavfnPlanner is kinematics-agnostic so it
+      # doesn't itself avoid reversing, but RPP can still choose a short
+      # reverse over a wide loop when a goal's heading differs sharply from
+      # the direct line. Reverse driving is symmetric in the calibrated
+      # bridge (offline-tested) but not yet road-tested in reverse.
+      allow_reversing: true
+      max_robot_pose_search_dist: 10.0
+      use_interpolation: true
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 3.0
+      publish_frequency: 1.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      # Rectangular footprint (was robot_radius: 0.14, a circle sized for
+      # the worst-case DIAGONAL corner). Computed from QB3rt.urdf.xacro incl.
+      # wheel protrusion past the chassis box: x = +-(wheelbase/2+wheel_radius)
+      # = +-0.0985, y = +-(track_width/2+wheel_width/2) = +-0.0915, rounded up
+      # for margin. This gives Nav2 the correct INSCRIBED radius (~0.095 m,
+      # guaranteed-safe for any orientation) separately from the CIRCUMSCRIBED
+      # radius (~0.138 m, diagonal worst-case only) instead of conflating both
+      # into one 0.14 m circle - the difference is ~4.5 cm of clearance per
+      # side that a circular model wasted on doorways/corridors approached
+      # straight-on (2026-07-14, see docs/slam_nav2.md).
+      footprint: "[[0.10, 0.095], [0.10, -0.095], [-0.10, -0.095], [-0.10, 0.095]]"
+      # 2D obstacle layer: the lidar is planar, so the 3D voxel layer just burns
+      # CPU/memory. ObstacleLayer is much lighter for the same result here.
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.5
+          raytrace_min_range: 0.0
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.25
+      # Send only deltas (full costmap each cycle is heavy over the wifi link).
+      always_send_full_costmap: False
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      # Rectangular footprint (was robot_radius: 0.14, a circle sized for
+      # the worst-case DIAGONAL corner). Computed from QB3rt.urdf.xacro incl.
+      # wheel protrusion past the chassis box: x = +-(wheelbase/2+wheel_radius)
+      # = +-0.0985, y = +-(track_width/2+wheel_width/2) = +-0.0915, rounded up
+      # for margin. This gives Nav2 the correct INSCRIBED radius (~0.095 m,
+      # guaranteed-safe for any orientation) separately from the CIRCUMSCRIBED
+      # radius (~0.138 m, diagonal worst-case only) instead of conflating both
+      # into one 0.14 m circle - the difference is ~4.5 cm of clearance per
+      # side that a circular model wasted on doorways/corridors approached
+      # straight-on (2026-07-14, see docs/slam_nav2.md).
+      footprint: "[[0.10, 0.095], [0.10, -0.095], [-0.10, -0.095], [-0.10, 0.095]]"
+      resolution: 0.05
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.5
+          raytrace_min_range: 0.0
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.25
+      always_send_full_costmap: False
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    planner_plugins: ["GridBased"]
+    # NavFn (2D) for the first cut. If corners demand pivots this robot can't do,
+    # switch GridBased to nav2_smac_planner::SmacPlannerHybrid with
+    # minimum_turning_radius ~0.4 for kinematically feasible paths (see docs).
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.5
+      use_astar: false
+      allow_unknown: true
+
+smoother_server:
+  ros__parameters:
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    # NOTE: "spin" and "assisted_teleop" intentionally omitted - this skid-steer
+    # cannot rotate in place. Recovery uses costmap clearing, wait and backup only.
+    behavior_plugins: ["backup", "drive_on_heading", "wait"]
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+
+waypoint_follower:
+  ros__parameters:
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    # Cap to safe indoor speeds (calibrated max is ~0.42 m/s). No lateral motion.
+    max_velocity: [0.26, 0.0, 1.2]
+    min_velocity: [-0.26, 0.0, -1.2]
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: "/odometry/filtered"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+collision_monitor:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    # Final velocity to the wave_rover bridge.
+    cmd_vel_out_topic: "cmd_vel"
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+    polygons: ["FootprintApproach"]
+    FootprintApproach:
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "/local_costmap/published_footprint"
+      time_before_collision: 1.2
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: False
+      enabled: True
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      min_height: 0.15
+      max_height: 2.0
+      enabled: True
+
+docking_server:
+  ros__parameters:
+    controller_frequency: 50.0
+    initial_perception_timeout: 5.0
+    wait_charge_timeout: 5.0
+    dock_approach_timeout: 30.0
+    undock_linear_tolerance: 0.05
+    undock_angular_tolerance: 0.1
+    max_retries: 3
+    base_frame: "base_link"
+    fixed_frame: "odom"
+    dock_backwards: false
+    dock_prestaging_tolerance: 0.5
+    dock_plugins: ['simple_charging_dock']
+    simple_charging_dock:
+      plugin: 'opennav_docking::SimpleChargingDock'
+      docking_threshold: 0.05
+      staging_x_offset: -0.7
+      use_external_detection_pose: true
+      use_battery_status: false
+      use_stall_detection: false
+      external_detection_timeout: 1.0
+      external_detection_translation_x: -0.18
+      external_detection_translation_y: 0.0
+      external_detection_rotation_roll: -1.57
+      external_detection_rotation_pitch: -1.57
+      external_detection_rotation_yaw: 0.0
+      filter_coef: 0.1
+    controller:
+      k_phi: 3.0
+      k_delta: 2.0
+      v_linear_min: 0.15
+      v_linear_max: 0.15
+
+map_saver:
+  ros__parameters:
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: True

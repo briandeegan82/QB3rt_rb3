@@ -1,0 +1,83 @@
+# robot_localization EKF for the QB3rt AGV — OAK-D Basalt VIO path.
+#
+# Inputs:
+#   odom0 : OAK-D on-device Basalt stereo VIO -> /oak/vio/odometry (pose + twist)
+#   imu0  : RB3 IMU                           -> /imu/data          (gyro: yaw rate)
+#
+# Use this file when running rtabmap_nav.launch.py with the OAK-D providing VIO
+# instead of ORB-SLAM3 on the OV9282.  Switch via the ekf_config launch arg:
+#
+#   ros2 launch QB3rt rtabmap_nav.launch.py \
+#       ekf_config:=$(ros2 pkg prefix QB3rt)/share/QB3rt/config/ekf_oak_vio.yaml
+#
+# Differences from ekf.yaml (ORB-SLAM3 path):
+#   odom0 topic  : /oak/vio/odometry  (vs /vio/odometry)
+#   odom0 source : Basalt stereo VIO on OAK-D  (vs mono-inertial ORB-SLAM3 on OV9282)
+#
+# Basalt stereo VIO publishes a real twist (vx, vy, vz) unlike ORB-SLAM3.  vx fusion
+# is LEFT OFF here to keep configs parallel and switching simple.  Once you have
+# confirmed Basalt is tracking reliably, enable vx by setting odom0_config[6] = true;
+# this gives the EKF a measured forward velocity instead of deriving it from position
+# differences, which improves odometry during VIO brief dropouts.
+#
+# Rotation is owned by the RB3 gyro, NOT by VIO: Basalt exports yaw in its odometry
+# but the ICM-42688 has no magnetometer, so absolute yaw from either source would
+# drift from an arbitrary origin.  Fusing only yaw RATE from the gyro lets the EKF
+# integrate heading cleanly; rtabmap map->odom corrects slow drift.
+#
+# Output: continuous odom->base_footprint TF.  rtabmap supplies map->odom.
+ekf_filter_node:
+  ros__parameters:
+    frequency: 20.0
+    sensor_timeout: 0.1
+    two_d_mode: true
+    publish_tf: true
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # --- OAK-D Basalt stereo VIO (primary odometry): absolute x, y ---
+    # Fuse absolute x, y only.  Yaw is intentionally NOT fused (gyro owns rotation).
+    # Subscribes to the covariance-relay output: Basalt publishes all-zero covariance
+    # which collapses the Kalman gain to 1 (no filtering). oak_vio_relay.py inserts
+    # a diagonal covariance (pos_variance=0.01 m² by default) before we see it.
+    odom0: /oak/vio/odometry_cov
+    # x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+    odom0_config: [true,  true,  false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: true
+    odom0_queue_size: 10
+
+    # --- RB3 IMU (primary gyro): yaw RATE only ---
+    # Absolute yaw NOT fused (no magnetometer, gyro-integrated yaw drifts).
+    # ax NOT fused: two_d_mode derives velocity from position differences; fusing ax
+    # without a position anchor causes quadratic drift when VIO drops out.
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    # --- Wheel odometry: DISABLED ---
+    # /odom is a cmd_vel echo, not encoder-measured. See ekf.yaml for details.
+    #
+    # odom1: /odom
+    # odom1_config: [false, false, false,
+    #                false, false, false,
+    #                true,  false, false,
+    #                false, false, false,
+    #                false, false, false]
+    # odom1_differential: false
+    # odom1_relative: false
+    # odom1_queue_size: 10

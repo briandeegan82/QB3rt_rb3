@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="42">
+    <General>
+      <Interfaces>
+        <!-- rover link on ros_net_5G (192.168.0.0/24) -->
+        <NetworkInterface name="wlan0" priority="default" multicast="default"/>
+      </Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <!-- With multicast off, unicast discovery only probes participant
+           indexes 0..MaxAutoParticipantIndex (default 9) per peer address.
+           The full stack has far more participants than that, so late-started
+           processes (ros2 CLI, tests) randomly failed to discover nodes
+           ("Node not found" on param set, topics missing). Raise the range. -->
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <Peers>
+        <!-- localhost: required for local node-to-node discovery (multicast is
+             off); without it each node only announces to the remote peer and the
+             local Nav2/SLAM/EKF graph never discovers itself. -->
+        <Peer address="localhost"/>
+        <Peer address="192.168.0.101"/>
+      </Peers>
+    </Discovery>
+    <Internal>
+      <!-- Large-message delivery (camera frames): a 1.4 MB NV12 image is ~1000
+           UDP fragments per sample; with the kernel-default ~208 kB socket
+           buffer a briefly busy subscriber overflows it, and under BEST_EFFORT
+           one lost fragment discards the whole frame. Symptom (2026-07-13):
+           /image_nv12 delivered ~10-12 Hz instead of 30, and the nv12_to_mono8
+           subscription starved to 0 Hz the moment ORB-SLAM3's SLAM thread
+           started competing for CPU - killing VIO. Needs the matching kernel
+           limits from /etc/sysctl.d/98-agv-dds.conf (net.core.rmem_max) or the
+           kernel silently caps this request. -->
+      <SocketReceiveBufferSize min="16MB"/>
+      <SocketSendBufferSize min="2MB"/>
+    </Internal>
+  </Domain>
+</CycloneDDS>

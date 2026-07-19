@@ -1,0 +1,141 @@
+# robot_localization EKF for the QB3rt AGV.
+#
+# Inputs (see QB3rt bringup wiring):
+#   odom0 : calibrated wheel odometry -> /odom          (vx only)
+#   odom1 : ORB-SLAM3 VIO             -> /vio/odometry  (x, y, yaw; differential, health-gated)
+#   imu0  : RB3 IMU                   -> /imu/data       (gyro: yaw rate)
+#
+# Fusion design - wheel + gyro backbone, VIO enrichment:
+#
+#   Wheel odometry /odom is dead-reckoned from cmd_vel (no encoders), BUT the
+#   rewritten bridge maps commands through the calibrated affine drive model
+#   (deadband + measured V_full), so its vx is an honest ground-speed estimate
+#   rather than the old command echo. Only vx is fused (never pose - dead
+#   reckoning; never vyaw - scrub makes the commanded yaw rate optimistic).
+#
+#   Rotation is owned by the gyro: the ICM-42688 has no magnetometer, so only
+#   its yaw RATE is fused (absolute yaw would drift from an arbitrary origin)
+#   and the EKF integrates heading from it at ~200 Hz.
+#
+#   The odom frame drifts slowly (it is odometry, not localization);
+#   slam_toolbox's map->odom owns the correction, as REP-105 intends.
+#
+#   ORB-SLAM3 VIO (odom1) is fused as a health-gated enrichment: x/y/yaw
+#   deltas, best at low speed where wheel vx is weakest. The relay
+#   (scripts/orbslam3_pose_to_odom.py) suppresses its output whenever VIO is
+#   not gravity-aligned, so the EKF coasts on wheel+gyro when VIO is unhealthy.
+#   See the odom1 block below for the full rationale and residual risk.
+#
+# Output: continuous odom->base_footprint TF. slam_toolbox supplies map->odom.
+ekf_filter_node:
+  ros__parameters:
+    # 20 Hz: a rate the EKF hits reliably on this RB3. 30 was missed (effective
+    # ~15 Hz) due to scheduling/clock jitter (bursty VIO, USB/Wi-Fi interrupt load,
+    # hypervisor steal) rather than CPU saturation. A solid 20 Hz beats a jittery
+    # 30; it stays above Nav2's controller_frequency (15 Hz) for headroom.
+    frequency: 20.0
+    sensor_timeout: 0.1
+    two_d_mode: true              # planar AGV: zero out z/roll/pitch
+    publish_tf: true
+
+    map_frame: map
+    odom_frame: odom
+    # Publish odom->base_footprint, the root of the robot_state_publisher URDF
+    # tree (base_footprint->base_link->sensors). Targeting base_link instead would
+    # give base_link two parents (EKF + URDF), orphaning base_footprint and
+    # breaking slam_toolbox's odom->base_footprint lookup.
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # Scale process noise with velocity: when the robot is stationary the state
+    # barely moves, so shrink the model noise and stop the estimate wandering
+    # on sensor noise alone.
+    dynamic_process_noise_covariance: true
+
+    # --- Calibrated wheel odometry (primary translation): vx only ---
+    # /odom is open-loop (no encoders) but flows through the calibrated affine
+    # drive model in the rewritten wave_rover_bridge, with covariance set there
+    # (vx 0.04 (m/s)^2). Velocity-only: its pose is dead-reckoned (never fuse),
+    # and its vyaw is scrub-optimistic (the gyro owns rotation).
+    odom0: /odom
+    # x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 10
+
+    # --- ORB-SLAM3 VIO: RE-FUSED 2026-07-18 as HEALTH-GATED odom1 ---
+    # Fills the two backbone gaps above: VIO tracks best at LOW speed (little
+    # blur/vibration, ample parallax) exactly where the open-loop wheel vx is
+    # worst, and its differential yaw curbs the gyro's rate drift. The transform
+    # chain (Kalibr T_b_c1 -> Rz(90) rebase -> derived R_MOUNT -> lever arm) is
+    # hardware-validated to ~1 deg (2026-07-15).
+    #
+    # HISTORY / why this is safe now: VIO was REMOVED 2026-07-13 because tracking
+    # collapses while DRIVING (a few Hz of wandering poses) and, fused
+    # differentially, injected phantom velocity that out-voted wheel+gyro even
+    # behind the relay's jump/speed guards + a Mahalanobis gate (16.8 m of
+    # phantom path in a 7 s straight; 344 m before the guards). What changed:
+    # the relay (scripts/orbslam3_pose_to_odom.py) now HEALTH-GATES its output -
+    # it publishes /vio/odometry only once ORB-SLAM3's world is gravity-aligned
+    # (VIBA converged) and suppresses it whenever alignment is lost or after a
+    # reset. So during the init ritual and any tracking failure the EKF simply
+    # sees a VIO dropout and coasts on wheel+gyro.
+    #
+    # KNOWN RESIDUAL RISK (accepted): degraded-but-upright driving wander can
+    # stay gravity-aligned and continuous, so the health gate won't catch it -
+    # only odom1_pose_rejection_threshold (below) and the covariance stand
+    # between it and the estimate. If a phantom path recurs while driving, the
+    # mitigation ladder is: tighten odom1_pose_rejection_threshold, then loosen
+    # the relay's position/orientation variance, then add speed-scheduled trust
+    # (deferred by choice - VIO covariance vs wheel /odom vx).
+    #
+    # DIFFERENTIAL on purpose: VIO's world has an arbitrary per-session position
+    # AND yaw origin, so only body-frame DELTAS are fused (absolute VIO yaw would
+    # fight the gyro from a different origin - the original 2026-07-13 bug). VIO
+    # yaw and the gyro yaw RATE (imu0) are complementary: the gyro carries the
+    # high rate, VIO deltas curb its long-term drift. slam_toolbox's map->odom
+    # still owns absolute correction.
+    odom1: /vio/odometry
+    # x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+    odom1_config: [true,  true,  false,
+                   false, false, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom1_differential: true
+    odom1_relative: false
+    odom1_queue_size: 10
+    # Mahalanobis gate. Critical backstop: when the relay suppresses VIO for an
+    # unhealthy stretch then resumes, the EKF differences the resumed pose
+    # against its own stale last pose -> one huge outlier delta; this rejects it.
+    # Loosen if it rejects genuine motion; tighten if wander leaks through.
+    odom1_pose_rejection_threshold: 3.0
+
+    # --- RB3 IMU (primary gyro): yaw RATE only ---
+    # Absolute yaw is NOT fused: the ICM-42688 is 6-axis (no magnetometer), so its
+    # orientation yaw is gyro-integrated (drifts, arbitrary origin). Fusing the
+    # yaw RATE lets the EKF integrate heading cleanly.
+    # Forward acceleration (ax) is NOT fused: velocity is observed by VIO deltas
+    # and wheel vx; adding ax would integrate accelerometer bias into position
+    # whenever those drop out.
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    # NOTE: single IMU on purpose (/imu/data); ORB-SLAM3 uses the same IMU
+    # internally for its mono-inertial estimate. Do not add a second, redundant
+    # IMU here without verifying its frame/sign against /imu/data.
+
+    # (odometry inputs: odom0 wheel vx, odom1 VIO x/y/yaw above)

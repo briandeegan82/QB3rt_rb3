@@ -1,0 +1,127 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# ORB-SLAM3 MONOCULAR-INERTIAL settings for the RB3 Gen2 OV9282 tracking camera + onboard IMU.
+#
+# Loaded by orb_slam3_ros_mono_imu via the `settings_file` parameter (see
+# QB3rt/launch/rb3_vio.launch.py). Modeled on the stock ORB-SLAM3
+# Monocular-Inertial/RealSense_D435i.yaml (PinHole + IMU).
+#
+# IMPORTANT: every value tagged `# CALIB:` is a PLACEHOLDER and MUST be replaced
+# with a real measured calibration before VIO will be metric/accurate:
+#   - Camera1.* / Camera.width/height  : intrinsics from a checkerboard calibration
+#                                         (keep in sync with
+#                                         qrb_ros_camera/config/camera_info_ov9282.yaml)
+#   - IMU.T_b_c1                        : IMU->camera extrinsics (e.g. from Kalibr)
+#   - IMU.Noise*/IMU.*Walk/IMU.Frequency: IMU noise densities (lsm6dst datasheet /
+#                                         Allan-variance) and the qrb_ros_imu output rate
+# Mono-inertial recovers metric scale from the IMU, so the IMU params and extrinsics
+# matter as much as the camera intrinsics.
+#--------------------------------------------------------------------------------------------
+File.version: "1.0"
+
+# CALIB 2026-07-10: Kalibr calibrated the OV9282 with the `equidistant` model, so this
+# is ORB-SLAM3's fisheye camera (KannalaBrandt8), NOT PinHole. Do not "downgrade" the
+# distortion coeffs into pinhole k1,k2,p1,p2 — they are Kannala-Brandt k1..k4.
+Camera.type: "KannalaBrandt8"
+
+# FRAME-CONVENTION WARNING (2026-07-14 deep dive): the IMU.T_b_c1 rotation below has a
+# raw rotation ANGLE of 54.7 deg, but the camera's optical axis is elevated only
+# 35.3 deg above horizontal - the 54.7 is the complement, an artifact of the IMU body
+# frame being yawed -90 deg vs the chassis (/imu/data axes: x=robot-right,
+# y=robot-forward, z=up). Do NOT quote "~55 deg" as the camera tilt; that misreading
+# derailed two mount-correction attempts. Derived geometry (base FLU): optical axis
+# (0.816, 0.004, 0.578), camera at base_link + (0.085, 0.016, 0.149) m. Consumers of
+# this rotation: orbslam3_pose_to_odom.py (_R_BC_KALIBR - keep in sync) and the URDF
+# tracking_camera_joint.
+
+# CALIB 2026-07-10 (Kalibr, ov9282_calibration, 1280x720): OV9282 fisheye intrinsics.
+Camera1.fx: 548.085898406508
+Camera1.fy: 548.4774617118545
+Camera1.cx: 644.9772256555007
+Camera1.cy: 377.2732751030379
+
+# CALIB 2026-07-10: equidistant / Kannala-Brandt distortion coeffs k1..k4, in Kalibr
+# distortion_coeffs order.
+Camera1.k1: -0.0009447430487445625
+Camera1.k2: 0.025130057509402948
+Camera1.k3: -0.021676146999977924
+Camera1.k4: 0.006033656681603929
+
+# CALIB: capture resolution. Must match what qrb_ros_camera publishes (cameraId 1).
+# Calibrated at 1280x720, so rb3_vio.launch.py height default is set to 720 to match
+# (OV9282 native is 1280x800; capture is run at 720 to match this calibration).
+Camera.width: 1280
+Camera.height: 720
+
+# Frames per second delivered on image_raw (kept at 30 to bound RB3 CPU load).
+Camera.fps: 30
+
+# Images are grayscale (mono8 out of nv12_to_mono8), so this is ignored, but keep it set.
+Camera.RGB: 1
+
+#--------------------------------------------------------------------------------------------
+# IMU Parameters
+#--------------------------------------------------------------------------------------------
+# CALIB 2026-07-10: transform from body/IMU frame to the (left) camera frame, 4x4 [R|t].
+# = inv(T_cam_imu) from Kalibr ov9282_calibration-camchain-imucam.yaml (Kalibr reports
+# T_cam_imu = cam<-imu; ORB-SLAM3 wants T_b_c1 = imu->cam, so it is inverted). Lever
+# arm |t| ~= 0.117 m. NOTE: Kalibr also reported timeshift_cam_imu = -0.0195 s; stock
+# ORB-SLAM3 has no per-config IMU time-offset field, so it is not applied here.
+IMU.T_b_c1: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: f
+   data: [0.9999878475, 0.0029333643, -0.0039623511, 0.0140819564,
+          0.0015378460, 0.5780185589, 0.8160221692, 0.0849099141,
+          0.0046840028, -0.8160183460, 0.5780070234, 0.0791549663,
+          0.0, 0.0, 0.0, 1.0]
+
+# Do not insert keyframes when recently lost.
+IMU.InsertKFsWhenLost: 0
+
+# CALIB 2026-07-10: IMU noise model from Allan variance, inflated for robust VIO
+# (ov9282_calibration/imu.yaml: accel/gyro noise x2, random walks x10 over the raw
+# allan values — the same model fed to the Kalibr imu-cam calibration).
+IMU.NoiseGyro: 0.0004903452510492971    # rad/s^0.5   gyroscope_noise_density
+IMU.NoiseAcc: 0.0036871293722761244     # m/s^1.5     accelerometer_noise_density
+IMU.GyroWalk: 4.784937770862236e-05     # rad/s^1.5   gyroscope_random_walk
+IMU.AccWalk: 0.0006277545208403863      # m/s^2.5     accelerometer_random_walk
+# CALIB: must match the actual qrb_ros_imu (/imu/data) publish rate.
+IMU.Frequency: 200.0
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters
+#--------------------------------------------------------------------------------------------
+# Feature budget kept modest (1000) to bound ORB extraction cost on the RB3 CPU;
+# raise toward 1250 if tracking is sparse and CPU headroom allows.
+# 1500 (was 1000, raised 2026-07-13): maps were initializing with only 66-165
+# points and tracking died on "TRACK_REF_KF: Less than 15 matches" one frame
+# after init whenever the rig moved briskly. More features widens the matching
+# margin under motion blur / marginal texture; the QCS6490 has CPU headroom.
+ORBextractor.nFeatures: 1500
+
+# Scale factor between levels in the scale pyramid.
+ORBextractor.scaleFactor: 1.2
+
+# Number of levels in the scale pyramid.
+ORBextractor.nLevels: 8
+
+# FAST thresholds: try iniThFAST first, fall back to minThFAST in low-contrast cells.
+# Lower these if the mono tracking camera produces low-contrast frames.
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters (Pangolin viewer is disabled via show_viewer:=false on the robot)
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -3.5
+Viewer.ViewpointF: 500.0

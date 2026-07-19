@@ -1,0 +1,45 @@
+# rtabmap SLAM parameters for QB3rt (RGBD + VIO-odometry mode).
+#
+# Inputs (wired in rtabmap_nav.launch.py):
+#   rgb/image        <- /oak/rgb/image_raw      (OAK-D RGB)
+#   rgb/camera_info  <- /oak/rgb/camera_info
+#   depth/image      <- /oak/stereo/image_raw   (OAK-D rectified stereo depth)
+#   odom             <- /odometry/filtered       (EKF output; upstream VIO from OAK-D Basalt)
+#
+# Outputs:
+#   map->odom TF     (corrects EKF drift via loop closure)
+#   /map             (occupancy grid consumed by Nav2 costmaps)
+#
+# CPU budget: DetectionRate 1 Hz and approx_sync avoid saturating the RB3.
+# The EKF (ekf.yaml) fuses VIO+IMU for odom->base_footprint; rtabmap only
+# needs to close loops, not run at control frequency.
+rtabmap:
+  ros__parameters:
+    # Delete the rtabmap database on every launch so stale poses from previous
+    # uncalibrated VIO sessions don't corrupt the occupancy grid. Set to false
+    # once ORB-SLAM3 is calibrated and persistent maps are desired.
+    delete_db_on_start: true
+
+    # Robot base frame (matches slam_toolbox.yaml and the URDF TF tree).
+    frame_id: base_footprint
+    odom_frame_id: odom
+    subscribe_rgb: true
+    subscribe_depth: true
+    subscribe_odom_info: false
+    # approx_sync: RGB and depth arrive on slightly different timestamps from the
+    # OAK-D; approximate sync tolerates up to ~50 ms skew without dropping frames.
+    approx_sync: true
+    # Publish the map->odom TF so Nav2's costmaps have a corrected global pose.
+    publish_tf: true
+    # Loop-closure detection rate. 1 Hz is sufficient for slow indoor navigation
+    # and is CPU-friendly on the RB3 (full image registration at 15+ Hz would
+    # saturate the board and starve Nav2 and the EKF).
+    Rtabmap/DetectionRate: "1"
+    # Drop nodes that are never matched into the map graph to keep RAM bounded.
+    Mem/NotLinkedNodesKept: "false"
+    # Use the depth sensor for the occupancy grid (Grid/Sensor 1 = depth camera).
+    # Required so Nav2 costmaps get a 2D obstacle map from the 3D depth point cloud.
+    Grid/Sensor: "1"
+    # Cap the depth range used for the occupancy grid. OAK-D-LITE depth quality
+    # degrades past ~4 m indoors; beyond that, noise inserts phantom obstacles.
+    Grid/RangeMax: "4.0"

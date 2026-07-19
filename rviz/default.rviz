@@ -1,0 +1,16 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Grid
+      Name: Grid
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+  Name: root
+Window Geometry:
+  Height: 768
+  Width: 1024

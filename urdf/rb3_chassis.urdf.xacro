@@ -1,0 +1,113 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Approximate RB3 Gen2 mezzanine/chassis model with camera and IMU frames. -->
+  <xacro:macro name="rb3_chassis" params="parent_link prefix xyz:='0 0 0' rpy:='0 0 0'">
+    <xacro:property name="rb3_length" value="0.120"/>
+    <xacro:property name="rb3_width" value="0.090"/>
+    <xacro:property name="rb3_height" value="0.045"/>
+    <xacro:property name="bar_length" value="0.115"/>
+    <xacro:property name="bar_width" value="0.012"/>
+    <xacro:property name="bar_height" value="0.008"/>
+    <!-- camera_bar_z collapsed to 0: OAK-D and OV9282 are at very different heights
+         so there is no shared bar point. Each camera is offset from rb3_base_link directly
+         via camera_bar_link (which sits at rb3_base_link). -->
+    <xacro:property name="camera_bar_z" value="0.000"/>
+
+    <joint name="${prefix}_mount_joint" type="fixed">
+      <parent link="${parent_link}"/>
+      <child link="${prefix}_base_link"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+
+    <link name="${prefix}_base_link">
+      <visual>
+        <geometry>
+          <box size="${rb3_length} ${rb3_width} ${rb3_height}"/>
+        </geometry>
+        <material name="mat_black"/>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="${rb3_length} ${rb3_width} ${rb3_height}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.55"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="0.0010" ixy="0.0" ixz="0.0" iyy="0.0012" iyz="0.0" izz="0.0015"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_camera_bar_joint" type="fixed">
+      <parent link="${prefix}_base_link"/>
+      <child link="${prefix}_camera_bar_link"/>
+      <origin xyz="0 0 ${camera_bar_z}" rpy="0 0 0"/>
+    </joint>
+    <link name="${prefix}_camera_bar_link">
+      <visual>
+        <geometry>
+          <box size="${bar_length} ${bar_width} ${bar_height}"/>
+        </geometry>
+        <material name="mat_gray"/>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="${bar_length} ${bar_width} ${bar_height}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- IMU frame at the center of the RB3 board stack. The ICM-42688's axes
+         (as published on /imu/data) are x=robot-RIGHT, y=robot-FORWARD, z=UP,
+         i.e. yawed -90 deg vs the chassis. Established 2026-07-14 from the
+         Kalibr IMU.T_b_c1 extrinsic: its lever arm matches the measured camera
+         offsets only under this mapping, image-right comes out robot-right,
+         and the EKF's yaw-rate-on-z works (z is shared, which is also why the
+         old identity rpy never broke yaw fusion - it WOULD break any future
+         fusion of x/y rates or accelerations). -->
+    <joint name="${prefix}_imu_joint" type="fixed">
+      <parent link="${prefix}_base_link"/>
+      <child link="imu_link"/>
+      <origin xyz="0 0 0" rpy="0 0 ${-pi/2}"/>
+    </joint>
+    <link name="imu_link"/>
+
+    <!-- OV9282 tracking camera (RB3 integrated camera, used by ORB-SLAM3).
+         Pose derived 2026-07-14 from the Kalibr IMU.T_b_c1 extrinsic
+         (config/orbslam3_ov9282_imu.yaml) mapped through the IMU's -90 deg
+         yaw: camera at base_link + (85, 16, 149) mm (the old hand-measured
+         (70, 20, 170) was ~2 cm off), optical axis elevated 35.3 deg above
+         horizontal. NOTE: the tilt is 35 deg, NOT the oft-quoted ~55 - that
+         figure is the raw rotation ANGLE of the Kalibr matrix (its
+         complement), an artifact of the stacked IMU-yaw + optical-axes
+         conventions. This is an FLU mount frame (x = optical axis); the
+         optical-convention child frame (tracking_cam_optical) is published
+         by rb3_vio.launch.py / perception.launch.py. -->
+    <joint name="${prefix}_tracking_camera_joint" type="fixed">
+      <parent link="${prefix}_camera_bar_link"/>
+      <child link="tracking_camera_frame"/>
+      <origin xyz="0.0849 -0.0141 0.0792" rpy="0 -0.6163 0"/>
+    </joint>
+    <link name="tracking_camera_frame"/>
+
+    <!-- OAK-D Lite (main depth/VIO camera).
+         Offsets measured from base_link: x=+65mm, y=-3mm, z=+82mm.
+         From rb3_base_link (at base_link + (0, +30mm, +70mm)): x=+65, y=-33, z=+12mm.
+         oak_vio_relay.py applies Rz(-90deg) to convert OAK body (Y=fwd) to ROS body (X=fwd).
+         URDF rpy is identity: camera body Z (up) and X/Y (horiz) align with robot frame. -->
+    <joint name="${prefix}_main_camera_joint" type="fixed">
+      <parent link="${prefix}_camera_bar_link"/>
+      <child link="main_camera_frame"/>
+      <origin xyz="0.065 -0.033 0.012" rpy="0 0 0"/>
+    </joint>
+    <link name="main_camera_frame"/>
+
+    <!-- Backward-compatibility frame alias for existing configs expecting camera_frame. -->
+    <joint name="${prefix}_camera_alias_joint" type="fixed">
+      <parent link="main_camera_frame"/>
+      <child link="camera_frame"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+    <link name="camera_frame"/>
+  </xacro:macro>
+</robot>
