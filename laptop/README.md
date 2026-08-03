@@ -13,24 +13,28 @@ drops mid-drive.
 
 ## One-time laptop setup
 
-1. Install Nav2 (not present on this laptop yet):
+1. Install Nav2 (ROS 2 Jazzy):
 
    ```bash
    sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup
    ```
 
-2. Install the bundle (robot mounted at `~/mnt/rb3`):
+2. Install the laptop bundle from this repo (or from the robot mount):
 
    ```bash
+   # from a git clone on the laptop:
+   bash /path/to/QB3rt/laptop/install_on_laptop.sh
+   # or if the robot is mounted at ~/mnt/rb3:
    bash ~/mnt/rb3/root/QB3rt/laptop/install_on_laptop.sh
    ```
 
    This copies configs + the no-spin behavior trees to `~/qb3rt_laptop`.
-   Re-run it after editing the canonical copies in `/root/QB3rt/laptop/`.
+   Re-run after editing the canonical copies under `laptop/` in the repo
+   (or `/root/QB3rt/laptop/` on the robot).
 
-3. `~/cyclonedds.xml` must exist on the laptop (it does) and peer with the
-   robot's IP (192.168.0.100). The robot side is `/opt/cyclonedds.xml` via
-   `rover_env.sh`.
+3. Configure CycloneDDS on the laptop (`~/cyclonedds.xml`) to peer with the
+   robot’s Wi‑Fi IP (lab default often `192.168.0.100` — set yours). The robot
+   side uses `/opt/cyclonedds.xml` via `rover_env.sh`.
 
 ## Clock sync (do not skip)
 

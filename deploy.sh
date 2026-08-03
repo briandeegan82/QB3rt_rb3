@@ -40,6 +40,15 @@ if ! touch "$DST/.deploy_write_test" 2>/dev/null; then
 fi
 rm -f "$DST/.deploy_write_test"
 
+# Ensure ament can find the packages. ros2 looks up
+# share/ament_index/resource_index/packages/<name> — the share/<name> tree
+# alone is not enough (seen after a bootstrap that omitted the index).
+AMENT_PKGS="$ROOT/usr/share/ament_index/resource_index/packages"
+mkdir -p "$AMENT_PKGS"
+for pkg in QB3rt wave_rover_controller orb_slam3_ros orb_slam3_msgs slam_toolbox; do
+    [ -e "$AMENT_PKGS/$pkg" ] || touch "$AMENT_PKGS/$pkg"
+done
+
 copy_tree() {  # copy_tree <src_dir> <dst_dir>  (whole-tree, skips __pycache__)
     local src="$1" dst="$2"
     mkdir -p "$dst"

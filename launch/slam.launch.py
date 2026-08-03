@@ -28,13 +28,15 @@ def generate_launch_description():
                     "use_sim_time": use_sim_time,
                 }.items(),
             ),
-            # RPLIDAR C1 laser scanner.
+            # RPLIDAR C1 — use the udev symlink from system/99-agv-serial.rules
+            # (not ttyUSB*, which swaps with the wave_rover bridge across boots).
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
                         [FindPackageShare("rplidar_ros"), "launch", "rplidar_c1_launch.py"]
                     )
                 ),
+                launch_arguments={"serial_port": "/dev/rplidar"}.items(),
             ),
             # slam_toolbox (online async) — publishes map->odom.
             IncludeLaunchDescription(

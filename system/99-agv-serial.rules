@@ -2,5 +2,15 @@
 # Both boards use identical Silicon Labs CP2102N bridges (10c4:ea60), so the
 # kernel's ttyUSB0/ttyUSB1 assignment depends on USB enumeration order and can
 # swap between boots. These symlinks make the names deterministic.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="825892601e0bee1198824502f59e3369", SYMLINK+="rplidar"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="706dc0a6f9d9ef1196234f3dc8728757", SYMLINK+="wave_rover"
+#
+# Serial numbers are PER PHYSICAL UNIT (the CP2102N chip ID). Update both
+# lines when commissioning a new RB3 (udevadm info -q property -n /dev/ttyUSB*).
+#
+# This unit (adb serial 46927088):
+#   ttyUSB0 = wave_rover  90473affd2d9ef11b7014d3dc8728757
+#   ttyUSB1 = rplidar     f613e1eb20e6ed119484d8a80b2af5ab
+# Previous unit (kept for reference):
+#   rplidar     825892601e0bee1198824502f59e3369
+#   wave_rover  706dc0a6f9d9ef1196234f3dc8728757
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="f613e1eb20e6ed119484d8a80b2af5ab", SYMLINK+="rplidar"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="90473affd2d9ef11b7014d3dc8728757", SYMLINK+="wave_rover"

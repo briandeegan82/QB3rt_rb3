@@ -46,3 +46,10 @@ Thumbs.db
 
 # Deploy preflight scratch
 .deploy_write_test
+
+# Slim bootstrap overlay (ORB-SLAM / slam_toolbox / … binaries + share).
+# Obtained via ./fetch_overlay.sh or ./pack_overlay.sh — never commit.
+/overlay/
+/qb3rt-overlay.tar.gz
+/overlay_release.env
+

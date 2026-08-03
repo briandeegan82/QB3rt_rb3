@@ -1,140 +1,205 @@
-# QB3rt — RB3 Gen 2 AGV
+# QB3rt — teaching AGV on Qualcomm RB3 Gen 2
 
-Skid-steer AGV on a WAVE ROVER base with a Qualcomm RB3 Gen 2 (QIRP) brain.
-Perception: ORB-SLAM3 mono-inertial VIO on the OV9282 tracking camera + RB3
-IMU, RPLIDAR C1 for 2D SLAM (slam_toolbox). Navigation: Nav2, onboard or
-remote on the laptop.
+**QB3rt** is a classroom / lab AGV stack for a fleet of skid-steer rovers. Each unit is a [WAVE ROVER](https://www.waveshare.com/) base with a **Qualcomm Robotics RB3 Gen 2** (QIRP) as the onboard computer. Students and instructors use it to explore ROS 2 perception, localization, mapping, and Nav2 navigation on real hardware.
 
-**GitHub:** [briandeegan82/QB3rt_rb3](https://github.com/briandeegan82/QB3rt_rb3)
-— versioned backup of this tree. On the robot, `/root/QB3rt` remains the
-live edit/deploy source; push/pull against `origin` when you want changes
-off-box or restored after a reflash.
+This repository is the project source: launch files, configs, calibration, deploy tooling, and docs. On a robot the live tree lives at `/root/QB3rt`.
 
-## Where things live (and why)
+![QB3rt fleet — WAVE ROVER base + Qualcomm RB3 Gen 2 with RPLIDAR](images/QB3rt.jpeg)
 
-| path | role |
+![Nav2 in RViz — mapped space, costmap, and planned path](images/QB3rt_map.png)
+
+**Repo:** [briandeegan82/QB3rt_rb3](https://github.com/briandeegan82/QB3rt_rb3)
+
+---
+
+## What it does
+
+| Layer | Role |
+|-------|------|
+| **Drive** | WAVE ROVER motors via a calibrated HTTP bridge (`/cmd_vel` → wheel commands) |
+| **VIO** | ORB-SLAM3 mono-inertial on the OV9282 tracking camera + RB3 IMU |
+| **Odometry** | `robot_localization` EKF fuses VIO deltas, IMU yaw rate, and wheel `vx` |
+| **2D SLAM** | RPLIDAR C1 + `slam_toolbox` builds `/map` and owns `map→odom` |
+| **Nav** | Nav2 (planner / controller / BT) — onboard **or** remote on a laptop |
+
+Typical teaching split: the robot runs sensing + SLAM; the laptop runs Nav2 +
+RViz so students can watch the map and send goals over Wi‑Fi.
+
+---
+
+## Hardware (per robot)
+
+- WAVE ROVER skid-steer chassis (open-loop drive; cannot pivot in place)
+- Qualcomm RB3 Gen 2 running QIRP / ROS 2 (Jazzy-class stack)
+- OV9282 tracking camera + onboard IMU → ORB-SLAM3 VIO
+- RPLIDAR C1 on USB (`/dev/rplidar`)
+- Chassis serial bridge on USB (`/dev/wave_rover`)
+
+USB device nodes come from udev rules (`system/99-agv-serial.rules`) keyed by
+each unit’s CP2102N chip serials in `units/<id>.conf`.
+
+---
+
+## Software layout
+
+| Path | Role |
 |------|------|
-| `/root/QB3rt` | **THE PROJECT.** Canonical source on the robot. Edit here. Persists across ostree reflashes (`/root` = `/var/roothome`). |
-| `/usr/share/QB3rt` | Install space. Running nodes load from here. **Never edit directly** — deploy instead. |
-| `/root/QB3rt/vendor_overrides/` | Files we maintain for vendor packages that have no source on the robot (the wave_rover bridge + its calibrated config). A reflash reverts the vendor package; re-deploying restores it. |
-| `/root/QB3rt/laptop/` | Remote-Nav2 bundle for the laptop (see `laptop/README.md`). |
-| `~/mnt/rb3` (laptop) | sshfs mount of the robot's `/`; the project is `~/mnt/rb3/root/QB3rt`. |
-| GitHub `QB3rt_rb3` | Off-robot git remote for this package (launch/config/scripts/docs/…). |
+| `/root/QB3rt` | **Canonical project on the robot.** Edit here. Survives ostree reflashes (`/root` → `/var/roothome`). |
+| `/usr/share/QB3rt` | Install / runtime copy. Nodes load from here. **Do not edit by hand** — run `deploy.sh`. |
+| `vendor_overrides/` | Patches for vendor packages that have no editable source on-device (wave_rover bridge + calibration). |
+| `laptop/` | Remote-Nav2 bundle for the instructor/student laptop. |
+| `units/` | Per-robot profiles (ADB serial, `ROS_DOMAIN_ID`, USB serials, Wi‑Fi keep-list). |
+| `overlay/` | Local cache of custom ROS binaries for bootstrap (**not** in git). |
+| GitHub | Off-robot backup / class distribution of this tree. |
 
-`/usr` is a read-only ostree mount: before any deploy, run
-`source /root/rover_env.sh` **in a device shell** (it remounts `/usr` rw and
-sets up the ROS/DDS env).
-
-## Clone / restore from GitHub
+`/usr` is an **ostree read-only** mount. Before writing under `/usr` (or before
+interactive `ros2` work), always:
 
 ```bash
-# fresh tree onto the robot (or a laptop working copy)
+source /root/rover_env.sh
+```
+
+That remounts `/usr` rw and sets up ROS / DDS. Laptop one-click deploy does this for you over adb; a shell on the device must still source it yourself.
+
+---
+
+## Quick start
+
+### A. Fresh robot or class handoff (from a laptop)
+
+Needs: USB adb to the RB3, this git clone, and the bootstrap overlay (downloaded once — see [SETUP.md](SETUP.md)).
+
+```bash
+cd /path/to/QB3rt
+./fetch_overlay.sh                              # once: slim share/lib from GitHub Release
+./deploy_via_adb.sh --unit 46927088 --clean --bootstrap
+```
+
+- `--clean` — wipe student Wi‑Fi passwords (except `WIFI_KEEP`) and clear
+  `/root` project state for the next class
+- `--bootstrap` — restore custom packages (ORB-SLAM, slam_toolbox, wave_rover, …)
+  into `/usr` after a reflash or wipe
+- Omit both for a routine project update: `./deploy_via_adb.sh --unit 46927088`
+
+Full details: **[SETUP.md](SETUP.md)**.
+
+### B. Edit on a robot that already has QB3rt
+
+```bash
+# on device (or via sshfs mount of /root/QB3rt)
+source /root/rover_env.sh
+# edit under /root/QB3rt …
+bash /root/QB3rt/deploy.sh    # sync → /usr/share/QB3rt + vendor overrides
+# then relaunch affected nodes
+```
+
+### C. Clone onto a blank `/root/QB3rt`
+
+```bash
 git clone https://github.com/briandeegan82/QB3rt_rb3.git /root/QB3rt
-# then deploy into install space (on-device, after remounting /usr rw):
+source /root/rover_env.sh
 bash /root/QB3rt/deploy.sh
+# still need overlay packages if the image was reflashed — use SETUP.md / --bootstrap
 ```
 
-`.gitignore` keeps out `__pycache__/`, `results/` (calibration run dumps),
-and ament install-space leftovers (`local_setup.*`, `environment/`, `hook/`,
-`cmake/`). Source of truth for what gets installed is still `deploy.sh`.
+---
 
-## Edit → deploy → relaunch
+## Bring-up (on the robot)
 
-```bash
-# 1. edit files under /root/QB3rt (directly or via the laptop mount)
-# 2. deploy the whole tree (works on-device or from the laptop mount):
-bash /root/QB3rt/deploy.sh
-# 3. relaunch the affected nodes
-# 4. (optional) commit + push to GitHub when the change should leave the robot
-```
+**Before launching:** let the RB3 clock sync (or freeze NTP). The board has no working RTC; a mid-run clock step breaks the EKF. See
+[laptop/README.md](laptop/README.md) and the note below.
 
-`deploy.sh` syncs launch/config/urdf/scripts/behavior_trees/rviz/docs +
-package.xml into `/usr/share/QB3rt`, clears stale `__pycache__`, and installs
-the vendor overrides (bridge + calibration) into the wave_rover_controller
-package. No hand-maintained file lists.
+### Recommended: two-step (you gate SLAM)
 
-## Frames & fusion (REP-105)
-
-```
-map ──(slam_toolbox)──> odom ──(EKF)──> base_footprint ──(URDF)──> base_link ──> wheels/laser/imu/cams
-```
-
-- **EKF** (`config/ekf.yaml`) is the *sole* owner of `odom->base_footprint`.
-  It fuses: ORB-SLAM3 VIO pose **differentially** (body-frame deltas — immune
-  to the VIO-vs-gyro yaw-origin mismatch), IMU yaw *rate*, and calibrated
-  wheel `vx` from the bridge.
-- **VIO trust gate** (`scripts/orbslam3_pose_to_odom.py`): the lateral `y`/`vy`
-  channel is *VIO-only-observable*, so a warming-up VIO that drifts while parked
-  would run the filter away sideways (seen 2026-07-19: ~1 m/s phantom `vy`). The
-  relay therefore only feeds the EKF once VIO is BOTH gravity-aligned (roll/pitch
-  ~0) AND **metrically converged** — confirmed when, with the wheels reporting
-  stationary, VIO also reads ~0 speed for a few seconds. It also drops any VIO
-  frame implying >0.6 m/s (above the platform's ~0.42 m/s top speed).
-  **Operator:** end the figure-8 init ritual with a brief stop so the gate can
-  confirm.
-- **slam_toolbox** (`config/slam_toolbox.yaml`) owns `map->odom` and `/map`.
-- The wave_rover bridge must keep `publish_tf: false` (two parents for
-  `base_link` otherwise — this broke Nav2 once already).
-
-## Drive controller
-
-`vendor_overrides/wave_rover_controller/wave_rover_bridge.py` maps `/cmd_vel`
-to motor commands through the calibrated open-loop model
-(`docs/odometry_calibration.md`): affine speed-scaled feedforward
-(friction-floor `motor_deadband` + measured `max_speed`), speed-scheduled
-skid-steer turn gain (exponential `spin_boost_max`/`spin_boost_k`), left/right
-`straight_trim`, and the firmware `motor_cmd_max: 0.5` full-scale cap
-(fractions above 0.5 stall this firmware). The base cannot pivot in place;
-Nav2 is configured for arc-only motion everywhere (RPP without
-rotate-to-heading, no Spin recovery, Smac Hybrid DUBIN planner on the laptop).
-
-## Bring-up
-
-### Manual two-step (recommended for hands-on mapping)
-
-Start odometry first, confirm it is healthy, *then* start SLAM by hand — you are
-the gate, so a warming-up VIO can never be baked into the map:
+Start odometry, confirm VIO is healthy, *then* start lidar SLAM so a warming-up VIO never corrupts the map:
 
 ```bash
 source /root/rover_env.sh
 
-# 1) odometry only: base + VIO + EKF (no SLAM, no Nav2)
+# 1) base + VIO + EKF (no SLAM, no Nav2)
 ros2 launch QB3rt odometry_bringup.launch.py
-#    - wait for /odometry/filtered
-#    - do the ORB-SLAM3 figure-8 ritual, THEN STAND STILL until the relay logs
-#      "VIO metric convergence confirmed" (i.e. /vio/ready=true)
-#    - sanity: ros2 topic echo /odometry/filtered --field twist.twist  # ~0 parked
+#    • wait for /odometry/filtered
+#    • drive a small figure-8 for ORB-SLAM3 init, then STAND STILL until
+#      the relay logs "VIO metric convergence confirmed" (/vio/ready=true)
+#    • parked: ros2 topic echo /odometry/filtered --field twist.twist  → ~0
 
-# 2) only now start SLAM (RPLIDAR + slam_toolbox -> map->odom)
+# 2) RPLIDAR + slam_toolbox → map→odom
 ros2 launch QB3rt slam_toolbox.launch.py
 
-# 3) Nav2 remote on the laptop: laptop/README.md
+# 3) Nav2 on the laptop — follow laptop/README.md
 ```
 
-### One-shot (automatic /vio/ready gate)
+### One-shot (automatic `/vio/ready` gate)
 
 ```bash
 source /root/rover_env.sh
 
-# everything onboard (SLAM + Nav2 on the robot):
+# full stack onboard (SLAM + Nav2 on the robot)
 ros2 launch QB3rt full_stack.launch.py
 
-# robot side only, Nav2 remote on the laptop:
+# robot sensing + SLAM only; Nav2 remote on the laptop
 ros2 launch QB3rt full_stack.launch.py enable_nav:=false
-# ... then on the laptop: laptop/README.md
 ```
 
-Here `full_stack`/`lidar_slam` hold slam_toolbox automatically until VIO latches
-`/vio/ready` (`gate_slam_on_vio`), instead of the manual step 2 above.
+Other launches: `perception.launch.py` (camera/VIO), `lidar_slam.launch.py` (camera-free lidar SLAM), `odom_square_test.launch.py` (drive calibration — see [docs/odometry_calibration.md](docs/odometry_calibration.md)).
 
-Other entry points: `odometry_bringup.launch.py` (base+VIO+EKF, no SLAM),
-`slam_toolbox.launch.py` (RPLIDAR + slam_toolbox, manual start),
-`lidar_slam.launch.py` (camera-free lidar SLAM), `perception.launch.py`
-(camera/VIO), `odom_square_test.launch.py` (calibration; see
-`docs/odometry_calibration.md`).
+---
 
-> **Clock:** the RB3 has no working RTC (boots at 1970) and depends on
-> `systemd-timesyncd` against the laptop. Its first sync **steps** the clock ~1
-> min after boot; if that lands while the stack is running, robot_localization
-> sees a time discontinuity and drifts. Let the clock sync (or freeze it with
-> `sudo timedatectl set-ntp false`) **before** launching. See `laptop/README.md`.
+## Architecture (REP-105 frames)
+
+```
+map ──(slam_toolbox)──> odom ──(EKF)──> base_footprint ──(URDF)──> base_link
+                                                              └─> wheels / laser / imu / cams
+```
+
+| Transform | Owner | Notes |
+|-----------|--------|--------|
+| `map→odom` | slam_toolbox | From `/scan` |
+| `odom→base_footprint` | EKF only | Fuses VIO (differential), IMU yaw rate, wheel `vx` |
+| `base_footprint→…` | URDF / static TF | Sensors and links |
+
+**VIO trust gate** (`scripts/orbslam3_pose_to_odom.py`): lateral motion is VIO-only-observable. The relay feeds the EKF only after VIO is gravity-aligned *and* metrically converged (wheels ~0 and VIO ~0 for a few seconds). It also drops frames implying >0.6 m/s (above the ~0.42 m/s platform top speed). End the figure-8 init with a brief stop so the gate can latch.
+
+**Bridge:** `publish_tf: false` on the wave_rover driver — otherwise two parents claim `base_link` and Nav2 breaks.
+
+**Drive model:** open-loop calibrated feedforward (deadband, max speed, skid turn gain, left/right trim). Firmware `motor_cmd_max: 0.5`. The base cannot spin in place; Nav2 is configured for arc-only motion (no rotate-to-heading /Spin recovery). Details: [docs/odometry_calibration.md](docs/odometry_calibration.md).
+
+---
+
+## Laptop Nav2 + RViz
+
+Install Nav2, copy the laptop bundle, and peer CycloneDDS with the robot — see **[laptop/README.md](laptop/README.md)**. Summary:
+
+1. Robot: `full_stack.launch.py enable_nav:=false` (or the two-step above)
+2. Laptop: Nav2 + RViz; `/cmd_vel` goes over Wi‑Fi to the bridge
+3. Bridge `cmd_timeout: 0.5` stops the wheels if the link drops
+
+---
+
+## Operational gotchas
+
+1. **Clock** — Sync (or disable NTP after sync) *before* launching. A boot-time timesync step while the EKF is running causes wild odometry drift.
+2. **`source /root/rover_env.sh`** — Required for `/usr` writes and a correct ROS/DDS environment on device.
+3. **`ROS_DOMAIN_ID`** — Unique per robot on the same Wi‑Fi (`units/*.conf`).
+4. **VIO init** — Figure-8, then stand still until `/vio/ready` before trusting maps / Nav2.
+5. **USB serials** — After swapping lids or lids/bases, update `units/<id>.conf` and udev rules so `/dev/rplidar` and `/dev/wave_rover`
+   point at the right CP2102Ns.
+
+---
+
+## Documentation map
+
+| Doc | Contents |
+|-----|----------|
+| [SETUP.md](SETUP.md) | One-click adb deploy, bootstrap overlay, class `--clean` |
+| [laptop/README.md](laptop/README.md) | Remote Nav2, DDS, clock sync |
+| [docs/slam_nav2.md](docs/slam_nav2.md) | Live SLAM + Nav2 (onboard vs laptop) |
+| [docs/odometry_calibration.md](docs/odometry_calibration.md) | Wheel / bridge calibration |
+| [docs/orbslam3_calibration.md](docs/orbslam3_calibration.md) | Camera / VIO calibration |
+| [docs/system_audit_2026-07-16.md](docs/system_audit_2026-07-16.md) | Historical device audit (dated) |
+
+---
+
+## License
+
+Apache-2.0 — see `package.xml`.

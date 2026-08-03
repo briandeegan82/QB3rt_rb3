@@ -1,5 +1,13 @@
 # QB3rt System Audit — 2026-07-16
 
+> **Historical snapshot (2026-07-16).** This is a point-in-time device audit, not
+> a live runbook. Several findings have since changed in the repo (for example
+> `system/` now versions cyclonedds / udev / sysctl; VIO is ORB-SLAM3 on OV9282,
+> not OAK-D Basalt; deploy tooling includes adb bootstrap). Security and network
+> items (default root password, `startup-network.service` → eduroam, etc.) may
+> still apply on a given robot until verified. Prefer [README.md](../README.md)
+> and [SETUP.md](../SETUP.md) for current procedures.
+
 Full audit of the QB3rt AGV (Qualcomm RB3 Gen 2 vision kit, QIRP 1.5 / ROS 2 Jazzy).
 Scope: code & config review, system/deploy hygiene, security & robustness, plus the
 boot-time wifi-drop investigation. Static audit — the ROS stack was not running.

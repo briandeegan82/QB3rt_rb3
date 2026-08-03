@@ -21,10 +21,11 @@ re-calibrate. Do the numbered steps in order **only when re-calibrating**.
 - **Not applied:** Kalibr `timeshift_cam_imu = −0.0195 s`. Stock ORB-SLAM3 has no IMU
   time-offset field; suspect it if initialization is sluggish.
 
-> **Deploy note:** `/usr/share` is read-only (ostree). Run `source /root/rover_env.sh`
-> **on the device** to remount it `rw`, then copy `/root/QB3rt/{config,launch}` →
-> `/usr/share/QB3rt/` and relaunch. The host's sshfs mount cannot remount `/usr` itself,
-> and the `!`-prefix host shell does not reach the device.
+> **Deploy note:** edit under `/root/QB3rt`, then sync with
+> `bash /root/QB3rt/deploy.sh` (after `source /root/rover_env.sh` on device).
+> From a laptop: `./deploy_via_adb.sh --unit <id>`. Do not hand-edit
+> `/usr/share/QB3rt` — an ostree remount alone is not enough; prefer the deploy
+> scripts. An sshfs mount cannot remount `/usr` from the host.
 
 ## RB3 preflight (before any file edits under `/usr/share`)
 

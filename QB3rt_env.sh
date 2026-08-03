@@ -7,8 +7,8 @@ mount -o remount,rw /usr
 # Set up the runtime environment
 source /usr/share/qirp-setup.sh -m
 
-# Set the ROS_DOMAIN_ID
-export ROS_DOMAIN_ID=42
+# Set the ROS_DOMAIN_ID. Note: set to the same as the QB3rt model on the box
+export ROS_DOMAIN_ID=11
 
 # Use CycloneDDS with the AGV network config (deployed from this repo)
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

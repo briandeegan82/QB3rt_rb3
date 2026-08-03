@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CycloneDDS xmlns="https://cdds.io/config">
-  <Domain Id="42">
+  <!-- Id="any": applies to whatever ROS_DOMAIN_ID rover_env.sh sets, so the two
+       can never drift apart (a fixed Id here that stops matching ROS_DOMAIN_ID
+       silently drops all the peer/buffer tuning below - discovery just fails
+       with no error). -->
+  <Domain Id="any">
     <General>
       <Interfaces>
         <!-- rover link on ros_net_5G (192.168.0.0/24) -->

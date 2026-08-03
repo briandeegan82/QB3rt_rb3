@@ -2,12 +2,13 @@
 
 End-to-end procedure for calibrating the WAVE ROVER open-loop drivetrain and
 checking odometry accuracy. The robot has **no wheel encoders**, so every drive
-parameter is open-loop and tuned against an external sensor (OAK-D VIO / the EKF).
+parameter is open-loop and tuned against an external sensor (ORB-SLAM3 VIO /
+the EKF).
 
 All steps use one tool: `scripts/odom_square_test.py`, driven by
 `launch/odom_square_test.launch.py`. Pass `bringup:=true` to also start the robot
-stack (bridge + robot_state_publisher + joint_state_publisher + EKF + OAK-D VIO);
-omit it if the stack is already running.
+stack (bridge + robot_state_publisher + joint_state_publisher + EKF + ORB-SLAM3
+VIO); omit it if the stack is already running.
 
 ## RB3 preflight (before any file edits under `/usr/share`)
 
@@ -76,14 +77,17 @@ Calibrate in this order, because each layer depends on the ones below it:
 ## 2. Prerequisites
 
 - ~4-5 m of clear floor for the speed/straight runs; ~2 x 2 m for the square.
-- The OAK-D must be connected and VIO publishing `/oak/vio/odometry` - it (and the
-  EKF) is the ruler for every measurement. The test waits up to ~25 s for it.
-- The RB3 IMU must be publishing `/imu/data` (now started by `base.launch.py`,
-  i.e. by `bringup:=true`). It is the EKF's `imu0` gyro and the **only**
-  trustworthy yaw source for `mode:=turn` - VIO alone under-observes rotation
-  (a real turn can read ~9x too small). Verify with `ros2 topic hz /imu/data`.
+- ORB-SLAM3 VIO must be publishing `/vio/odometry` (OV9282 + RB3 IMU) — it and
+  the EKF are the rulers. The test waits up to ~25 s for it. Do the figure-8
+  init + stand-still until `/vio/ready` before trusting speed numbers (see
+  [orbslam3_calibration.md](orbslam3_calibration.md)).
+- The RB3 IMU must be publishing `/imu/data` (started by `base.launch.py` with
+  `bringup:=true`). It is the EKF's `imu0` gyro and the **only** trustworthy
+  yaw source for `mode:=turn` — VIO alone under-observes rotation. Verify with
+  `ros2 topic hz /imu/data`.
 - `driver_max_speed` in the test config **must match** `max_speed` in
-  `config/wave_rover_bridge.yaml`. The sweep commands
+  `vendor_overrides/wave_rover_controller/wave_rover_bridge.yaml` (and the
+  mirrors in `config/odom_square_test.yaml`). The sweep commands
   `linear.x = fraction * driver_max_speed`, so `fraction` == the true motor
   fraction only if they agree.
 
@@ -114,7 +118,8 @@ RESULT: wheels break free at motor fraction ~ 0.12
         recommended motor_deadband: 0.12
 ```
 
-Set it in `config/wave_rover_bridge.yaml` (`motor_deadband: 0.12`).
+Set it in `vendor_overrides/wave_rover_controller/wave_rover_bridge.yaml`
+(`motor_deadband: 0.12`).
 
 Tuning knobs: `deadband_step` (resolution), `deadband_max` (raise if no breakaway),
 `step_hold`, `move_threshold`.
@@ -163,7 +168,8 @@ ros2 launch QB3rt odom_square_test.launch.py mode:=straight bringup:=true \
 ```
 
 Report gives measured distance, actual speed, and the `max_speed` that makes
-commanded == actual. Set it in `config/wave_rover_bridge.yaml`, then re-run to
+commanded == actual. Set it in
+`vendor_overrides/wave_rover_controller/wave_rover_bridge.yaml`, then re-run to
 verify the ratio is ~1.0.
 
 > **Sanity-check the ruler first:** if VIO-measured speed seems implausibly low,
@@ -195,7 +201,7 @@ We landed on `straight_trim: 0.12`. Set live to iterate quickly:
 ros2 param set /waverover_bridge straight_trim 0.12
 ```
 
-then persist it in `config/wave_rover_bridge.yaml`.
+then persist it in `vendor_overrides/wave_rover_controller/wave_rover_bridge.yaml`.
 
 ---
 
@@ -245,8 +251,8 @@ needed peak is out of k-only range. Mirrors
 the bridge yaml.
 
 ```
-ros2 param set /waverover_bridge spin_boost_k 1.7
-ros2 param set /waverover_bridge spin_boost_max 8.0
+ros2 param set /waverover_bridge spin_boost_k 1.4
+ros2 param set /waverover_bridge spin_boost_max 10.0
 ```
 
 > **Two-speed fit for k (recommended).** Run `mode:=turn` at two forward speeds,
@@ -258,7 +264,7 @@ ros2 param set /waverover_bridge spin_boost_max 8.0
 > #                           M = 1 + (b1-1) * exp(k * v1)
 > ```
 >
-> Persist both in `wave_rover_bridge.yaml`.
+> Persist both in `vendor_overrides/wave_rover_controller/wave_rover_bridge.yaml`.
 
 > **The scrub ceiling (important).** Past ~6.7 boost on carpet the inside wheel
 > pins on the friction floor and **anchors**; >=9 can reverse and stall. Crawl
@@ -270,8 +276,8 @@ ros2 param set /waverover_bridge spin_boost_max 8.0
 > values that never *over*-rotate and let the EKF/Nav2 heading closed loop own
 > the exact final angle.
 
-**Defaults (2026-07-19):** `spin_boost_max: 8.0`, `spin_boost_k: 1.7`
-(≈ old constant boost ~6 at 0.20 m/s). Recalibrate after changing floor/tires.
+**Defaults (bridge yaml):** `spin_boost_max: 10.0`, `spin_boost_k: 1.4`.
+Recalibrate after changing floor/tires.
 
 Knobs: `turn_linear_speed`, `turn_target`, `angular_speed`, `direction`.
 
@@ -306,9 +312,8 @@ ros2 launch QB3rt odom_square_test.launch.py mode:=turn_check bringup:=true
 
 If a hand 360 deg reads ~360 deg, the gyro/EKF rotational scale is trustworthy and
 any under-rotation seen in `mode:=turn` is real drive behaviour. If it reads low,
-the ruler itself is off - suspect IMU mounting tilt (yaw axis not vertical reads
-low by ~`cos(tilt)`) or a bad `imu1` (OAK IMU) frame/axis dragging the fused rate
-(compare `/imu/data` vs `/oak/imu/data` `angular_velocity.z` while turning).
+the ruler itself is off — suspect IMU mounting tilt (yaw axis not vertical reads
+low by ~`cos(tilt)`). Confirm `/imu/data` `angular_velocity.z` while turning.
 
 ### `mode:=oneside` (one side full, other static — sanity check)
 
@@ -358,8 +363,8 @@ Per odometry source the report prints:
 | `path_m`       | total measured path length                 | perimeter  |
 
 A clean square closes (`close_err_m` small) with near-zero `head_err_deg`. Compare
-`/oak/vio/odometry`, `/odometry/filtered` and `/odom` to see how well dead
-reckoning and the EKF track ground truth.
+`/vio/odometry`, `/odometry/filtered` and `/odom` to see how well dead reckoning
+and the EKF track ground truth.
 
 ---
 
@@ -379,8 +384,8 @@ drivetrain slowness and are kept below only for history):
 | `motor_cmd_max`  | 0.5   | firmware T:1 full-scale — RE-CONFIRMED on serial 2026-07-13: sending 1.0 adds no speed and veers hard |
 | `motor_deadband` | 0.12  | static-friction breakaway fraction           |
 | `straight_trim`  | 0.12  | + curves left; 1.5 deg over 2 m at 0.3 m/s (worsens with speed: ~17 deg at full — Nav2 speeds are fine) |
-| `spin_boost_max` | 8.0   | peak boost at v=0 in exponential schedule; carpet anchor ~6.7, stall >=9 |
-| `spin_boost_k`   | 1.7   | decay rate (1/m/s); ≈ old constant boost 6 at 0.20 m/s with max 8 |
+| `spin_boost_max` | 10.0  | peak boost at v=0 in exponential schedule; carpet anchor ~6.7, stall >=9 |
+| `spin_boost_k`   | 1.4   | decay rate (1/m/s); must match `odom_square_test.yaml` mirrors |
 | `track_width`    | 0.15  | effective wheel separation (m)                |
 
 > **2026-07-13 session lessons:** (1) calibrate with a TAPE MEASURE — VIO is

@@ -1,0 +1,9 @@
+# Overlay / custom packages restored by ./deploy_via_adb.sh --bootstrap.
+# Stock QIRP packages (nav2_*, rplidar_ros, …) are assumed present on the image.
+# Each name needs share/<name>/ (+ ament_index markers) in this repo's share/
+# backup; lib/<name>/ and top-level lib/*.so are included when present.
+QB3rt
+wave_rover_controller
+orb_slam3_ros
+orb_slam3_msgs
+slam_toolbox

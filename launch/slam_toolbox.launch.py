@@ -36,7 +36,10 @@ def generate_launch_description():
                         [FindPackageShare("rplidar_ros"), "launch", "rplidar_c1_launch.py"]
                     )
                 ),
-                launch_arguments={"frame_id": "laser_frame"}.items(),
+                launch_arguments={
+                    "frame_id": "laser_frame",
+                    "serial_port": "/dev/rplidar",
+                }.items(),
             ),
             # slam_toolbox online async -> map->odom, with QB3rt's tuned config.
             IncludeLaunchDescription(
