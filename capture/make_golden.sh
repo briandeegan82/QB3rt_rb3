@@ -16,6 +16,7 @@ set -euo pipefail
 OUT=""
 SIZE=""                       # e.g. 24G; default computed from used space +35%
 AUTH_KEYS=""                  # optional: replace image's ubuntu authorized_keys with this file
+KEEP_WIFI=""                  # optional: comma-list of NM connection names to KEEP (else wipe all)
 MNT="/mnt/qb3rt-golden"
 SRC="/"
 
@@ -25,6 +26,7 @@ while [ $# -gt 0 ]; do
         --out) OUT="$2"; shift 2 ;;
         --size) SIZE="$2"; shift 2 ;;
         --authorized-keys) AUTH_KEYS="$2"; shift 2 ;;
+        --keep-wifi) KEEP_WIFI="$2"; shift 2 ;;
         -h|--help) usage 0 ;;
         *) echo "Unknown arg: $1" >&2; usage 1 ;;
     esac
@@ -68,6 +70,8 @@ rsync -aHAXx --numeric-ids \
     --exclude='/swap.img' --exclude='/swapfile' --exclude='/swapfile.qb3rt' \
     --exclude='/opt/qb3rt/.build' --exclude='/opt/qb3rt/src_ws' \
     --exclude='/var/cache/apt/archives/*.deb' \
+    --exclude='/opt/qb3rt/install/share/QB3rt' \
+    --exclude='/opt/qb3rt/install/share/ament_index/resource_index/packages/QB3rt' \
     --exclude="$OUT" \
     "$SRC" "$MNT/"
 
@@ -88,8 +92,22 @@ rm -f "$MNT/etc/udev/rules.d/99-agv-serial.rules"
 # template hostname
 echo "qb3rt-unconfigured" > "$MNT/etc/hostname"
 sed -i -E 's/^(\s*127\.0\.1\.1\s+).*/\1qb3rt-unconfigured/' "$MNT/etc/hosts" 2>/dev/null || true
-# saved Wi-Fi (no student/lab creds in the shared image)
-rm -f "$MNT"/etc/NetworkManager/system-connections/* 2>/dev/null || true
+# saved Wi-Fi: keep only the provisioning connection(s) in --keep-wifi so flashed
+# units auto-join the network on boot; wipe the rest (no student creds shipped).
+NMDIR="$MNT/etc/NetworkManager/system-connections"
+if [ -n "$KEEP_WIFI" ]; then
+    IFS=',' read -r -a _keepw <<< "$KEEP_WIFI"
+    for f in "$NMDIR"/*; do
+        [ -e "$f" ] || continue
+        cid="$(awk -F= '/^id=/{print $2; exit}' "$f" 2>/dev/null)"
+        [ -z "$cid" ] && cid="$(basename "$f" .nmconnection)"
+        keep=0
+        for k in "${_keepw[@]}"; do k="$(echo "$k" | xargs)"; [ "$cid" = "$k" ] && keep=1 && break; done
+        if [ "$keep" = 1 ]; then echo "  keep provisioning Wi-Fi: $cid"; else rm -f "$f"; fi
+    done
+else
+    rm -f "$NMDIR"/* 2>/dev/null || true
+fi
 # authorized_keys: optionally ship ONLY the provided (fleet) key, so a personal
 # key used to build the reference unit is not spread across the fleet.
 if [ -n "$AUTH_KEYS" ]; then

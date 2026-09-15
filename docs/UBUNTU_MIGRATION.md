@@ -45,22 +45,36 @@ ros2 launch QB3rt full_stack.launch.py enable_nav:=false    # camera+IMU up, ORB
 ### Phase B — capture + flash the golden image (once)
 
 ```bash
-sudo capture/make_golden.sh --out /media/usb/qb3rt-golden.img
-# then per the printed instructions:
-fastboot flash system qb3rt-golden.img   # confirm partition name first (see script)
+sudo capture/make_golden.sh --out /media/usb/qb3rt-golden.img \
+     --authorized-keys ~ubuntu/.ssh/qb3rt_fleet.pub \
+     --keep-wifi ros_net_5G
+# then per the printed instructions (rootfs PARTLABEL is "writable"):
+fastboot flash writable qb3rt-golden.img
 ```
 
-Identity is reset **in the image copy**, so the reference unit stays usable.
-Flash the image to every other unit.
+- Identity is reset **in the image copy**, so the reference unit stays usable.
+- `--authorized-keys` ships only the fleet key (strips any personal key).
+- `--keep-wifi <name>` keeps the named provisioning Wi-Fi so **flashed units
+  auto-join the network on boot** and are reachable without a console; all other
+  saved Wi-Fi is dropped. Omit it to ship no Wi-Fi (then bring units up over
+  Ethernet or a serial console for first contact).
+- The QB3rt package is excluded (layer-3, installed post-stamp — see below).
 
-### Phase C — stamp each unit (per unit, from the laptop)
+### Phase C — find + stamp each unit (per unit, from the laptop)
 
-Fill in `units/<id>.conf` (SSH host, hostname, `DOMAIN_ID`, USB CP2102N serials,
-Wi-Fi), then:
+Freshly-flashed units come up as `qb3rt-unconfigured` (mDNS `.local` is
+unreliable on the multicast-off AP), so locate them by IP first:
 
 ```bash
-stamp/stamp_unit.sh --unit 46927088          # hostname + ROS_DOMAIN_ID + /dev/rplidar,/dev/wave_rover
-stamp/stamp_unit.sh --unit 46927088 --wifi   # also join lab Wi-Fi
+stamp/discover.sh                            # lists fleet units + IPs, FRESH vs stamped
+```
+
+Fill in `units/<id>.conf` (SSH host, hostname, `DOMAIN_ID`, USB CP2102N serials,
+Wi-Fi), then stamp using the discovered IP for first contact:
+
+```bash
+stamp/stamp_unit.sh --unit 16 --host ubuntu@<ip> --wifi   # identity + join lab Wi-Fi
+stamp/stamp_unit.sh --unit 16                             # later runs use the profile's SSH_HOST
 ```
 
 Then install the QB3rt project itself (it is NOT baked into the golden image —
