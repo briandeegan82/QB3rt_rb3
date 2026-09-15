@@ -1,0 +1,27 @@
+# QB3rt custom-package source manifest (vcstool format).
+# Imported by reference/10_build_custom.sh into a colcon workspace and built
+# natively on the reference RB3 against apt ROS Jazzy.
+#
+# Only the genuinely-custom packages are built from source:
+#   ORB-SLAM3 VIO (clydemcqueen/orb_slam3_ros — bundles orb_slam3_ros,
+#     orb_slam3_msgs, orb_slam3_bringup + a modules/ORB_SLAM3 submodule that
+#     10_build_custom.sh fetches recursively), and wave_rover_controller.
+# Everything else on the RB3 Gen2 Ubuntu image comes from apt and is NOT listed
+# here — including qrb_ros_camera/qrb_ros_imu (pre-installed) and DepthAI/OAK-D
+# (ros-jazzy-depthai-ros-driver-v3), plus nav2, slam_toolbox, rplidar_ros,
+# robot_localization, joy_linux, teleop_twist_joy, cv_bridge, …
+repositories:
+  # ORB-SLAM3 ROS 2 wrapper (+ msgs + bringup). Submodule modules/ORB_SLAM3 is
+  # pulled recursively and its ORBvoc.txt.tar.gz extracted by 10_build_custom.sh.
+  orb_slam3_ros:
+    type: git
+    url: https://github.com/clydemcqueen/orb_slam3_ros.git
+    version: main
+
+  # WAVE ROVER motor bridge / controller (course fork). The calibrated bridge
+  # override in vendor_overrides/wave_rover_controller/ is re-applied by
+  # deploy/update_project.sh after build.
+  wave_rover_controller:
+    type: git
+    url: https://github.com/EE5110-Sensing-Perception/WAVE-ROVER-Controller.git
+    version: main
