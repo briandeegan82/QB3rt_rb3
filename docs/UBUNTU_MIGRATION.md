@@ -46,18 +46,20 @@ ros2 launch QB3rt full_stack.launch.py enable_nav:=false    # camera+IMU up, ORB
 
 ```bash
 sudo capture/make_golden.sh --out /media/usb/qb3rt-golden.img \
-     --authorized-keys ~ubuntu/.ssh/qb3rt_fleet.pub \
-     --keep-wifi ros_net_5G
+     --authorized-keys ~ubuntu/.ssh/qb3rt_fleet.pub
 # then per the printed instructions (rootfs PARTLABEL is "writable"):
 fastboot flash writable qb3rt-golden.img
 ```
 
 - Identity is reset **in the image copy**, so the reference unit stays usable.
 - `--authorized-keys` ships only the fleet key (strips any personal key).
-- `--keep-wifi <name>` keeps the named provisioning Wi-Fi so **flashed units
-  auto-join the network on boot** and are reachable without a console; all other
-  saved Wi-Fi is dropped. Omit it to ship no Wi-Fi (then bring units up over
-  Ethernet or a serial console for first contact).
+- **Provisioning Wi-Fi auto-ships.** On this image NetworkManager stores Wi-Fi
+  via **netplan** (`/etc/netplan/90-NM-*.yaml`), which is captured by the rootfs
+  copy — so **flashed units auto-join the lab AP (e.g. `ros_net_5G`) on boot** with
+  no action needed. Build the reference unit joined to that AP and it carries over.
+- `--keep-wifi <names>` is optional **hygiene**: prune to a whitelist across both
+  netplan and NM keyfiles (drop stray/student networks, keep the provisioning one).
+  Default keeps all Wi-Fi — fine when building from a clean reference unit.
 - The QB3rt package is excluded (layer-3, installed post-stamp — see below).
 
 ### Phase C — find + stamp each unit (per unit, from the laptop)

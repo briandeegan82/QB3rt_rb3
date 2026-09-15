@@ -92,21 +92,27 @@ rm -f "$MNT/etc/udev/rules.d/99-agv-serial.rules"
 # template hostname
 echo "qb3rt-unconfigured" > "$MNT/etc/hostname"
 sed -i -E 's/^(\s*127\.0\.1\.1\s+).*/\1qb3rt-unconfigured/' "$MNT/etc/hosts" 2>/dev/null || true
-# saved Wi-Fi: keep only the provisioning connection(s) in --keep-wifi so flashed
-# units auto-join the network on boot; wipe the rest (no student creds shipped).
-NMDIR="$MNT/etc/NetworkManager/system-connections"
+# Wi-Fi: on this image NetworkManager stores connections via netplan
+# (/etc/netplan/90-NM-*.yaml); its own system-connections/ dir is usually empty.
+# The provisioning AP (e.g. ros_net_5G) lives in netplan and IS captured by the
+# rootfs rsync, so flashed units auto-join on boot with NO action needed.
+# Default: keep all Wi-Fi (build from a clean reference unit that only has the
+# provisioning AP). --keep-wifi <names> prunes to a whitelist across BOTH stores
+# for hygiene (drops any extra/student networks; keeps the provisioning one).
 if [ -n "$KEEP_WIFI" ]; then
-    IFS=',' read -r -a _keepw <<< "$KEEP_WIFI"
-    for f in "$NMDIR"/*; do
+    _keep_wifi() { local n="$1" k; IFS=',' read -r -a _kw <<< "$KEEP_WIFI"
+        for k in "${_kw[@]}"; do [ "$n" = "$(echo "$k" | xargs)" ] && return 0; done; return 1; }
+    for f in "$MNT"/etc/netplan/90-NM-*.yaml; do
         [ -e "$f" ] || continue
-        cid="$(awk -F= '/^id=/{print $2; exit}' "$f" 2>/dev/null)"
-        [ -z "$cid" ] && cid="$(basename "$f" .nmconnection)"
-        keep=0
-        for k in "${_keepw[@]}"; do k="$(echo "$k" | xargs)"; [ "$cid" = "$k" ] && keep=1 && break; done
-        if [ "$keep" = 1 ]; then echo "  keep provisioning Wi-Fi: $cid"; else rm -f "$f"; fi
+        n="$(sed -nE 's/^[[:space:]]*name:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/p' "$f" | head -1)"
+        [ -z "$n" ] && n="$(basename "$f" .yaml | sed -E 's/^90-NM-[0-9a-f-]+-//')"
+        if _keep_wifi "$n"; then echo "  keep Wi-Fi (netplan): $n"; else echo "  drop Wi-Fi (netplan): $n"; rm -f "$f"; fi
     done
-else
-    rm -f "$NMDIR"/* 2>/dev/null || true
+    for f in "$MNT"/etc/NetworkManager/system-connections/*; do
+        [ -e "$f" ] || continue
+        n="$(awk -F= '/^id=/{print $2; exit}' "$f" 2>/dev/null)"; [ -z "$n" ] && n="$(basename "$f" .nmconnection)"
+        _keep_wifi "$n" || rm -f "$f"
+    done
 fi
 # authorized_keys: optionally ship ONLY the provided (fleet) key, so a personal
 # key used to build the reference unit is not spread across the fleet.
