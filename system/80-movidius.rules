@@ -1,0 +1,7 @@
+# OAK-D / DepthAI (Luxonis) USB access — installed by reference/20_fleet_config.sh
+# to /etc/udev/rules.d/80-movidius.rules. Fleet-wide (not per-unit).
+#
+# The OAK-D enumerates as an Intel Movidius Myriad X. In bootloader/flash state
+# it appears as 03e7:2485, and once running as 03e7:f63b. Allow non-root access
+# so the depthai_ros_driver can open the device without sudo.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666", GROUP="plugdev"

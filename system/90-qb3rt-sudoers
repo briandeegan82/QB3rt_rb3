@@ -1,0 +1,7 @@
+# QB3rt fleet automation: passwordless sudo for the `ubuntu` user.
+# Installed 0440 to /etc/sudoers.d/90-qb3rt by reference/20_fleet_config.sh so
+# per-unit stamping (stamp/stamp_unit.sh) and future Ansible `become` run
+# unattended on every fleet unit — independent of cloud-init's own
+# 90-cloud-init-users drop-in, which make_golden.sh's cloud-init reset would
+# otherwise leave as the only (and non-deterministic) source of NOPASSWD.
+ubuntu ALL=(ALL) NOPASSWD:ALL

@@ -2,7 +2,16 @@
 
 **QB3rt** is a classroom / lab AGV stack for a fleet of skid-steer rovers. Each unit is a [WAVE ROVER](https://www.waveshare.com/) base with a **Qualcomm Robotics RB3 Gen 2** (QIRP) as the onboard computer. Students and instructors use it to explore ROS 2 perception, localization, mapping, and Nav2 navigation on real hardware.
 
-This repository is the project source: launch files, configs, calibration, deploy tooling, and docs. On a robot the live tree lives at `/root/QB3rt`.
+This repository is the project source: launch files, configs, calibration, deploy tooling, and docs.
+
+> **⚠️ Migrated to Ubuntu 24.04.** The fleet has moved off the Qualcomm Linux / QIRP
+> Yocto image onto the **Canonical Ubuntu 24.04** image. Provisioning is now a
+> golden-image + SSH flow — see **[`docs/UBUNTU_MIGRATION.md`](docs/UBUNTU_MIGRATION.md)**.
+> The `reference/`, `stamp/`, `handoff/`, `deploy/`, and `capture/` directories
+> replace the old adb/overlay tooling (archived under `legacy_qirp/`). Base ROS is
+> now apt `ros-jazzy-*` + the QIRP PPAs (`qrb_ros_camera`/`qrb_ros_imu`); custom
+> packages build on-device into `/opt/qb3rt/install`. The notes below that still
+> reference `/root/QB3rt`, `qirp-setup.sh`, or adb describe the old image.
 
 ![QB3rt fleet — WAVE ROVER base + Qualcomm RB3 Gen 2 with RPLIDAR](images/QB3rt.jpeg)
 
