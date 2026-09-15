@@ -63,6 +63,18 @@ stamp/stamp_unit.sh --unit 46927088          # hostname + ROS_DOMAIN_ID + /dev/r
 stamp/stamp_unit.sh --unit 46927088 --wifi   # also join lab Wi-Fi
 ```
 
+Then install the QB3rt project itself (it is NOT baked into the golden image —
+it is treated as frequently-changing "layer 3" code, and the golden image ships
+only ROS + dependencies):
+
+```bash
+deploy/update_project.sh --unit 46927088     # first install (and later updates)
+```
+
+`QB3rt` is a data-only ament package (no `CMakeLists.txt`); `update_project.sh`
+installs it by copying its `share` tree into the overlay + the ament index
+marker, and bootstraps the install dirs on first run.
+
 ## Day-to-day ops
 
 ```bash

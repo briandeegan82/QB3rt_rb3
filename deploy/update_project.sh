@@ -43,9 +43,13 @@ SSH_ID=(); [ -f "$FLEET_KEY" ] && SSH_ID=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
 SSHO=("${SSH_ID[@]}" -o ConnectTimeout=10)
 
 echo "Updating QB3rt on $SSH_TARGET"
-ssh "${SSHO[@]}" "$SSH_TARGET" "test -d $DST_SHARE" || {
-    echo "ERROR: $DST_SHARE missing on the unit — is QB3rt built into the overlay?" >&2
+# QB3rt is a data-only ament package (no CMakeLists — installed by copying its
+# share tree + the ament index marker, as the old deploy.sh did). Bootstrap the
+# install dirs on first run so this handles both first-install and updates.
+ssh "${SSHO[@]}" "$SSH_TARGET" "test -d $OVERLAY" || {
+    echo "ERROR: overlay $OVERLAY missing — run reference/10_build_custom.sh first." >&2
     exit 1; }
+ssh "${SSHO[@]}" "$SSH_TARGET" "mkdir -p $DST_SHARE"
 
 # --- 1. project runtime payload -> installed share/QB3rt --------------------
 # Whole-tree with --delete so files removed in the repo disappear on-device too
