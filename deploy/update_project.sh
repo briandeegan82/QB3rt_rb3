@@ -38,7 +38,7 @@ fi
 SSH_TARGET="${HOST_OVERRIDE:-${SSH_HOST:?need --host or a unit profile with SSH_HOST}}"
 # Dedicated fleet key for both ssh and rsync (works on first-contact-by-IP too).
 FLEET_KEY="${QB3RT_SSH_KEY:-$HOME/.ssh/qb3rt_fleet}"
-SSH_ID=(); [ -f "$FLEET_KEY" ] && SSH_ID=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
+SSH_ID=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null); [ -f "$FLEET_KEY" ] && SSH_ID+=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
 [ -f "$FLEET_KEY" ] && export RSYNC_RSH="ssh ${SSH_ID[*]}"
 SSHO=("${SSH_ID[@]}" -o ConnectTimeout=10)
 

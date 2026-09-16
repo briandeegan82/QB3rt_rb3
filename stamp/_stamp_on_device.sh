@@ -47,4 +47,27 @@ else
     echo "  WARNING: USB serials not both set — skipping udev (set them in the unit profile)." >&2
 fi
 
+echo "== Static IP -> ${STATIC_IP:-<keep DHCP>} (ALL Wi-Fi nets) =="
+if [ -n "${STATIC_IP:-}" ]; then
+    # Pin EVERY saved Wi-Fi connection to the fixed address, so the unit comes up
+    # at the same IP no matter which lab AP it joins (all on one /24). Applied now
+    # but the active link is re-activated a few seconds AFTER this SSH session
+    # closes — switching the IP live would sever the connection we're on.
+    gw="${GATEWAY:-${STATIC_IP%.*}.1}"; n=0
+    while IFS=: read -r cname ctype; do
+        [ "$ctype" = "802-11-wireless" ] || continue
+        nmcli connection modify "$cname" \
+            ipv4.method manual ipv4.addresses "${STATIC_IP}/${PREFIX:-24}" \
+            ipv4.gateway "$gw" ipv4.dns "${DNS:-$gw}" && { echo "  pinned $cname"; n=$((n+1)); }
+    done < <(nmcli -t -f NAME,TYPE connection show)
+    if [ "$n" -eq 0 ]; then
+        echo "  WARNING: no Wi-Fi connections found to pin." >&2
+    else
+        echo "  ${STATIC_IP}/${PREFIX:-24} gw $gw on $n net(s); active link switches ~3s after session ends"
+        active="$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="802-11-wireless"{print $1; exit}')"
+        [ -n "$active" ] && { systemd-run --on-active=3 --unit=qb3rt-ipswitch nmcli connection up "$active" >/dev/null 2>&1 \
+            || ( nohup sh -c "sleep 3; nmcli connection up '$active'" >/dev/null 2>&1 & ); }
+    fi
+fi
+
 echo "Stamp done for ${HOSTNAME_NEW} (domain ${DOMAIN_ID})."

@@ -34,7 +34,7 @@ SSH_TARGET="${HOST_OVERRIDE:-${SSH_HOST:?need --host or a unit profile with SSH_
 WIFI_KEEP="${KEEP_OVERRIDE:-${WIFI_KEEP:-}}"
 
 FLEET_KEY="${QB3RT_SSH_KEY:-$HOME/.ssh/qb3rt_fleet}"
-SSH_ID=(); [ -f "$FLEET_KEY" ] && SSH_ID=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
+SSH_ID=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null); [ -f "$FLEET_KEY" ] && SSH_ID+=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
 
 echo "Cleaning $SSH_TARGET  (keep Wi-Fi: [${WIFI_KEEP}])"
 ssh "${SSH_ID[@]}" -o ConnectTimeout=10 "$SSH_TARGET" \
