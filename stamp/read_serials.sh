@@ -14,10 +14,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UNITS_DIR="$(cd "$HERE/../units" && pwd)"
 
-UNIT="" HOST_OVERRIDE="" ASSIGN=0 WRITE=0
+UNIT="" ID="" HOST_OVERRIDE="" ASSIGN=0 WRITE=0
 usage() { sed -n '2,12p' "$0" | sed 's/^# \?//'; exit "${1:-0}"; }
 while [ $# -gt 0 ]; do
     case "$1" in
+        --id)   ID="$2"; shift 2 ;;
         --unit) UNIT="$2"; shift 2 ;;
         --host) HOST_OVERRIDE="$2"; shift 2 ;;
         --assign) ASSIGN=1; shift ;;
@@ -27,16 +28,30 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+NAME="${UNIT:-$ID}"
 CONF=""
-if [ -n "$UNIT" ]; then
-    CONF="$UNITS_DIR/$UNIT.conf"
-    [ -f "$CONF" ] || { echo "ERROR: no unit profile $CONF" >&2; exit 1; }
+if [ -n "$NAME" ]; then
+    CONF="$UNITS_DIR/$NAME.conf"
+    if [ -n "$ID" ] && [ ! -f "$CONF" ]; then   # --id creates the conf if absent
+        cat > "$CONF" <<EOF
+# Auto-created by: read_serials.sh --id $ID
+SSH_HOST=ubuntu@192.168.0.$ID
+HOSTNAME=qb3rt-$ID
+DOMAIN_ID=$ID
+STATIC_IP=192.168.0.$ID
+USB_RPLIDAR_SERIAL=
+USB_WAVE_ROVER_SERIAL=
+WIFI_KEEP=ros_net_5G,ROS_NET,ROS_NET_G037
+EOF
+        echo "created $CONF"
+    fi
+    [ -f "$CONF" ] || { echo "ERROR: no profile $CONF (use --id $NAME to create)" >&2; exit 1; }
     # shellcheck disable=SC1090
     source "$CONF"
 fi
 SSH_TARGET="${HOST_OVERRIDE:-${SSH_HOST:-}}"
-[ -n "$SSH_TARGET" ] || { echo "ERROR: need --host or a unit profile with SSH_HOST" >&2; exit 1; }
-[ "$WRITE" -eq 1 ] && [ -z "$CONF" ] && { echo "ERROR: --write requires --unit (a profile to write to)" >&2; exit 1; }
+[ -n "$SSH_TARGET" ] || { echo "ERROR: need --host or --id/--unit (SSH_HOST)" >&2; exit 1; }
+[ "$WRITE" -eq 1 ] && [ -z "$CONF" ] && { echo "ERROR: --write requires --id or --unit" >&2; exit 1; }
 
 FLEET_KEY="${QB3RT_SSH_KEY:-$HOME/.ssh/qb3rt_fleet}"
 SSH_ID=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null); [ -f "$FLEET_KEY" ] && SSH_ID+=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
@@ -104,5 +119,5 @@ if [ "$WRITE" -eq 1 ]; then
     sed -i -E "s|^USB_RPLIDAR_SERIAL=.*|USB_RPLIDAR_SERIAL=${RPLIDAR}|" "$CONF"
     sed -i -E "s|^USB_WAVE_ROVER_SERIAL=.*|USB_WAVE_ROVER_SERIAL=${WAVE_ROVER}|" "$CONF"
     echo
-    echo "Wrote serials into $CONF. Next: stamp/stamp_unit.sh --unit $UNIT"
+    echo "Wrote serials into $CONF. Next: stamp/stamp_unit.sh --unit $NAME"
 fi
