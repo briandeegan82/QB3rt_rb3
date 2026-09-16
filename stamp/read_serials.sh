@@ -39,7 +39,7 @@ SSH_TARGET="${HOST_OVERRIDE:-${SSH_HOST:-}}"
 [ "$WRITE" -eq 1 ] && [ -z "$CONF" ] && { echo "ERROR: --write requires --unit (a profile to write to)" >&2; exit 1; }
 
 FLEET_KEY="${QB3RT_SSH_KEY:-$HOME/.ssh/qb3rt_fleet}"
-SSH_ID=(); [ -f "$FLEET_KEY" ] && SSH_ID=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
+SSH_ID=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null); [ -f "$FLEET_KEY" ] && SSH_ID+=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
 SSH=(ssh "${SSH_ID[@]}" -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET")
 
 # Remote: print "dev<TAB>serial" for each attached CP2102N (10c4:ea60) tty.

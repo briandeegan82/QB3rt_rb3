@@ -39,7 +39,7 @@ SSH_TARGET="${HOST_OVERRIDE:-${SSH_HOST:?SSH_HOST not set in $CONF}}"
 # Use the dedicated fleet key explicitly so first contact by DHCP IP (before the
 # unit is named, when ~/.ssh/config's `Host qb3rt-*` can't match) still works.
 FLEET_KEY="${QB3RT_SSH_KEY:-$HOME/.ssh/qb3rt_fleet}"
-SSH_ID=(); [ -f "$FLEET_KEY" ] && SSH_ID=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
+SSH_ID=(-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null); [ -f "$FLEET_KEY" ] && SSH_ID+=(-i "$FLEET_KEY" -o IdentitiesOnly=yes)
 SSH=(ssh "${SSH_ID[@]}" -o ConnectTimeout=10 "$SSH_TARGET")
 echo "Stamping $UNIT via $SSH_TARGET  (hostname=$HOSTNAME domain=$DOMAIN_ID)"
 "${SSH[@]}" true || { echo "ERROR: cannot SSH to $SSH_TARGET" >&2; exit 1; }

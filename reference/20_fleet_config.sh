@@ -52,6 +52,39 @@ else
     exit 1
 fi
 
+# --- don't let the ubuntu password expiry block key-based SSH ----------------
+# Ubuntu/cloud-init ships the `ubuntu` account with an expired password (forced
+# change on first login). That blocks NON-interactive key-based SSH command
+# execution ("password change required... no TTY") — i.e. all of stamp/deploy/
+# discover/Ansible. Clear the forced change and stop cloud-init re-expiring it.
+log "Clearing forced password change on 'ubuntu' (unblocks key-based SSH)"
+$SUDO chage -d "$(date +%Y-%m-%d)" -M -1 ubuntu 2>/dev/null || true
+$SUDO mkdir -p /etc/cloud/cloud.cfg.d
+# runcmd runs in cloud-final, AFTER cloud-init expires the account on first boot,
+# so it reliably un-expires it (chpasswd:expire:false alone did not stick).
+$SUDO tee /etc/cloud/cloud.cfg.d/99-qb3rt-unlock.cfg >/dev/null <<'EOF'
+chpasswd:
+  expire: false
+runcmd:
+  - [ chage, -d, '20000', -M, '-1', ubuntu ]
+  - [ passwd, -u, ubuntu ]
+EOF
+# Bulletproof: a oneshot that re-clears it AFTER cloud-init on every boot
+# (cloud-init re-expires the account on a fresh instance's first boot).
+$SUDO tee /etc/systemd/system/qb3rt-unlock-ubuntu.service >/dev/null <<'EOF'
+[Unit]
+Description=QB3rt: clear forced password change on the ubuntu account
+After=cloud-final.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/chage -d 20000 -M -1 ubuntu
+ExecStart=/usr/bin/passwd -u ubuntu
+[Install]
+WantedBy=multi-user.target
+EOF
+$SUDO systemctl enable qb3rt-unlock-ubuntu.service >/dev/null 2>&1 || true
+
 # --- kernel UDP buffers for DDS large messages ------------------------------
 log "Installing sysctl DDS buffer limits"
 $SUDO cp "$SYS/98-agv-dds.conf" /etc/sysctl.d/98-agv-dds.conf
