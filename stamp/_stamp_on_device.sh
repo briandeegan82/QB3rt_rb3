@@ -47,4 +47,23 @@ else
     echo "  WARNING: USB serials not both set — skipping udev (set them in the unit profile)." >&2
 fi
 
+echo "== Static IP -> ${STATIC_IP:-<keep DHCP>} =="
+if [ -n "${STATIC_IP:-}" ]; then
+    # Pin the active Wi-Fi connection to a fixed address. Applied to the netplan/
+    # NM connection now, but re-activated a few seconds AFTER this SSH session
+    # closes — switching the IP live would sever the very connection we're on.
+    conn="$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="802-11-wireless"{print $1; exit}')"
+    if [ -z "$conn" ]; then
+        echo "  WARNING: no active Wi-Fi connection to pin — skipping static IP." >&2
+    else
+        gw="${GATEWAY:-${STATIC_IP%.*}.1}"
+        nmcli connection modify "$conn" \
+            ipv4.method manual ipv4.addresses "${STATIC_IP}/${PREFIX:-24}" \
+            ipv4.gateway "$gw" ipv4.dns "${DNS:-$gw}"
+        echo "  $conn -> ${STATIC_IP}/${PREFIX:-24} gw $gw (switches ~3s after this session ends)"
+        systemd-run --on-active=3 --unit=qb3rt-ipswitch nmcli connection up "$conn" >/dev/null 2>&1 \
+            || ( nohup sh -c "sleep 3; nmcli connection up '$conn'" >/dev/null 2>&1 & )
+    fi
+fi
+
 echo "Stamp done for ${HOSTNAME_NEW} (domain ${DOMAIN_ID})."

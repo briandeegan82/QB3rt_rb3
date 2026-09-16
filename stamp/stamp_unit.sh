@@ -45,12 +45,19 @@ echo "Stamping $UNIT via $SSH_TARGET  (hostname=$HOSTNAME domain=$DOMAIN_ID)"
 "${SSH[@]}" true || { echo "ERROR: cannot SSH to $SSH_TARGET" >&2; exit 1; }
 
 # --- run the on-device stamp (as root) --------------------------------------
+# NB: if STATIC_IP is set, the unit switches to it ~3s after this closes, so the
+# next stamp/deploy should target that IP (set SSH_HOST in the profile to match).
 "${SSH[@]}" "sudo env \
     HOSTNAME_NEW=$(printf '%q' "$HOSTNAME") \
     DOMAIN_ID=$(printf '%q' "$DOMAIN_ID") \
     USB_RPLIDAR_SERIAL=$(printf '%q' "${USB_RPLIDAR_SERIAL:-}") \
     USB_WAVE_ROVER_SERIAL=$(printf '%q' "${USB_WAVE_ROVER_SERIAL:-}") \
+    STATIC_IP=$(printf '%q' "${STATIC_IP:-}") \
+    GATEWAY=$(printf '%q' "${GATEWAY:-}") \
+    DNS=$(printf '%q' "${DNS:-}") \
+    PREFIX=$(printf '%q' "${PREFIX:-}") \
     bash -s" < "$ON_DEVICE"
+[ -n "${STATIC_IP:-}" ] && echo "NOTE: unit switching to ${STATIC_IP} shortly; reconnect there."
 
 # --- optional: (re)join lab Wi-Fi -------------------------------------------
 if [ "$DO_WIFI" -eq 1 ]; then
