@@ -91,6 +91,7 @@ $SUDO apt-get install -y \
     "ros-${ROS_DISTRO}-robot-localization" \
     "ros-${ROS_DISTRO}-rmw-cyclonedds-cpp" \
     "ros-${ROS_DISTRO}-ros2launch" \
+    "ros-${ROS_DISTRO}-demo-nodes-cpp" \
     ros-dev-tools \
     python3-colcon-common-extensions \
     python3-rosdep \
