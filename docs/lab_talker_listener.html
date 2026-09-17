@@ -1,0 +1,161 @@
+<h2 style="color:#0b5;">Lab: Talk to a Robot — ROS&nbsp;2 Talker / Listener over Wi‑Fi</h2>
+
+<p>In this lab you will connect your laptop to a Qualcomm <strong>RB3 Gen&nbsp;2</strong> robot over Wi‑Fi and exchange ROS&nbsp;2 messages between the two computers. You will run a <em>talker</em> on the robot and watch its messages arrive at a <em>listener</em> on your laptop — your first distributed ROS&nbsp;2 system. Works on <strong>Linux, macOS, and Windows</strong>.</p>
+
+<h3 style="color:#0b5;">What you'll learn</h3>
+<ul>
+  <li>Connect to a networked robot over SSH.</li>
+  <li>How ROS&nbsp;2 finds other nodes: the <strong>domain ID</strong>, the <strong>RMW</strong>, and <strong>unicast discovery</strong>.</li>
+  <li>Run and observe a talker/listener spanning two machines.</li>
+</ul>
+
+<h3 style="color:#0b5;">Before you start</h3>
+<ul>
+  <li>Your laptop has <strong>pixi</strong> with a <strong>RoboStack</strong> ROS&nbsp;2 <strong>Jazzy</strong> environment (Linux, macOS, or Windows).</li>
+  <li>From your instructor you have <strong>two numbers for your robot</strong>: its <strong>ROS&nbsp;domain</strong> and its <strong>IP address</strong>, plus the <strong>ubuntu SSH password</strong>.
+    <br><span style="color:#555;">These are <em>not</em> the same — e.g. robot&nbsp;#1 uses <strong>domain&nbsp;1</strong> but IP <strong>192.168.0.201</strong>.</span></li>
+</ul>
+
+<div style="border-left:4px solid #c0392b;background:#fdecea;padding:10px 14px;border-radius:4px;margin:14px 0;">
+  <strong>⚠ Connect to the lab Wi‑Fi ONLY.</strong> <strong>Unplug wired Ethernet and turn off any VPN</strong> before you start. If your laptop is on more than one network, ROS&nbsp;2 usually tries to talk over the wrong one and the listener stays silent — this is the #1 reason this lab "doesn't work."
+</div>
+
+<div style="border-left:4px solid #2b7ad1;background:#eef4fb;padding:10px 14px;border-radius:4px;margin:14px 0;">
+  <strong>Key idea.</strong> The lab Wi‑Fi has <strong>multicast turned off</strong>, so ROS&nbsp;2's automatic discovery can't find the robot. We use <strong>CycloneDDS</strong> with an explicit <strong>unicast peer</strong> (the robot's IP), and both computers must use the <strong>same <code>ROS_DOMAIN_ID</code></strong> (the robot's <em>domain</em>, not its IP).
+</div>
+
+<h3 style="color:#0b5;">Step 1 — Connect to the robot and start the talker</h3>
+<p>Open a terminal (macOS/Linux: Terminal; Windows: <strong>Windows Terminal</strong> or PowerShell — both include <code>ssh</code>). Use <strong>your robot's IP</strong>:</p>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">ssh ubuntu@192.168.0.201        # &lt;-- your robot's IP; enter the ubuntu password</pre>
+<p>The robot sets up ROS&nbsp;2 automatically at login. Confirm its domain, then start the talker:</p>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">cat /etc/qb3rt/domain_id            # &lt;-- this is the robot's DOMAIN (e.g. 1) — note it!
+ros2 run demo_nodes_cpp talker</pre>
+<p>You should see it publishing once per second. <strong>Leave it running</strong> and switch to a second terminal on your laptop.</p>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">[INFO] [talker]: Publishing: 'Hello World: 1'
+[INFO] [talker]: Publishing: 'Hello World: 2'
+...</pre>
+
+<h3 style="color:#0b5;">Step 2 — On your laptop: activate ROS&nbsp;2 (all OSes)</h3>
+<p>In your RoboStack pixi project, add the two packages this lab needs (first time only), then enter the environment:</p>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">cd ~/robostack/ros2-jazzy-ws          # your pixi project (path will vary)
+pixi add ros-jazzy-demo-nodes-cpp ros-jazzy-rmw-cyclonedds-cpp   # once
+pixi shell</pre>
+
+<h3 style="color:#0b5;">Step 3 — On your laptop: point ROS&nbsp;2 at your robot</h3>
+<p>You set three things: the <strong>domain</strong> (match the robot), the <strong>RMW</strong> (CycloneDDS), and a small <strong>config file</strong> that lists your robot's IP as a unicast peer. Commands differ by OS — pick yours.</p>
+
+<p style="margin-bottom:4px;"><strong>macOS / Linux</strong> (bash or zsh):</p>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">export ROS_DOMAIN_ID=1                          # your robot's DOMAIN (e.g. 1)
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+cat &gt; ~/rb3_dds.xml &lt;&lt;'EOF'
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;CycloneDDS xmlns="https://cdds.io/config"&gt;
+  &lt;Domain Id="any"&gt;
+    &lt;General&gt;&lt;AllowMulticast&gt;false&lt;/AllowMulticast&gt;&lt;/General&gt;
+    &lt;Discovery&gt;
+      &lt;ParticipantIndex&gt;auto&lt;/ParticipantIndex&gt;
+      &lt;MaxAutoParticipantIndex&gt;120&lt;/MaxAutoParticipantIndex&gt;
+      &lt;Peers&gt;
+        &lt;Peer address="localhost"/&gt;
+        &lt;Peer address="192.168.0.201"/&gt;      &lt;!-- YOUR robot's IP --&gt;
+      &lt;/Peers&gt;
+    &lt;/Discovery&gt;
+  &lt;/Domain&gt;
+&lt;/CycloneDDS&gt;
+EOF
+
+export CYCLONEDDS_URI=file://$HOME/rb3_dds.xml</pre>
+
+<p style="margin-bottom:4px;"><strong>Windows</strong> (PowerShell — this is what <code>pixi shell</code> opens on Windows):</p>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">$env:ROS_DOMAIN_ID = "1"                          # your robot's DOMAIN
+$env:RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp"
+
+@'
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;CycloneDDS xmlns="https://cdds.io/config"&gt;
+  &lt;Domain Id="any"&gt;
+    &lt;General&gt;&lt;AllowMulticast&gt;false&lt;/AllowMulticast&gt;&lt;/General&gt;
+    &lt;Discovery&gt;
+      &lt;ParticipantIndex&gt;auto&lt;/ParticipantIndex&gt;
+      &lt;MaxAutoParticipantIndex&gt;120&lt;/MaxAutoParticipantIndex&gt;
+      &lt;Peers&gt;
+        &lt;Peer address="localhost"/&gt;
+        &lt;Peer address="192.168.0.201"/&gt;
+      &lt;/Peers&gt;
+    &lt;/Discovery&gt;
+  &lt;/Domain&gt;
+&lt;/CycloneDDS&gt;
+'@ | Set-Content -Encoding ascii $env:USERPROFILE\rb3_dds.xml
+
+$env:CYCLONEDDS_URI = "file:///" + ($env:USERPROFILE -replace '\\','/') + "/rb3_dds.xml"</pre>
+<p style="color:#555;font-size:14px;">Edit the <code>192.168.0.201</code> line to <strong>your</strong> robot's IP before running the block. (On Windows you can also just open Notepad, paste the XML, and Save As <code>rb3_dds.xml</code> in your user folder.)</p>
+
+<h3 style="color:#0b5;">Step 4 — Run the listener</h3>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">ros2 run demo_nodes_cpp listener</pre>
+<p>Within a couple of seconds you should see the robot's messages arriving on your laptop:</p>
+<pre style="background:#0f2417;color:#8ef0b0;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">[INFO] [listener]: I heard: [Hello World: 42]
+[INFO] [listener]: I heard: [Hello World: 43]
+...</pre>
+<div style="border-left:4px solid #2b7;background:#eefaf1;padding:10px 14px;border-radius:4px;margin:14px 0;">
+  🎉 <strong>That message travelled from the robot, across the Wi‑Fi, to your laptop.</strong> The numbers continue from wherever the talker currently is — that's expected.
+</div>
+
+<h3 style="color:#0b5;">Step 5 — Inspect the system (optional)</h3>
+<p>Open another laptop terminal, <code>pixi shell</code>, and re‑run the domain / RMW / <code>CYCLONEDDS_URI</code> lines from Step&nbsp;3. Then:</p>
+<pre style="background:#1e1e1e;color:#eaeaea;padding:12px 14px;border-radius:6px;overflow-x:auto;font-family:Consolas,Menlo,monospace;font-size:14px;line-height:1.45;">ros2 topic list        # includes /chatter
+ros2 node list         # /talker (robot) + /listener
+ros2 topic echo /chatter</pre>
+
+<h3 style="color:#0b5;">Step 6 — Reverse the roles (optional)</h3>
+<ul>
+  <li><strong>Robot terminal:</strong> <code>Ctrl&nbsp;+&nbsp;C</code>, then <code>ros2 run demo_nodes_cpp listener</code>.</li>
+  <li><strong>Laptop terminal:</strong> <code>Ctrl&nbsp;+&nbsp;C</code>, then <code>ros2 run demo_nodes_cpp talker</code>.</li>
+</ul>
+<p>Now your laptop talks and the robot's terminal prints <code>I heard: …</code>.</p>
+
+<h3 style="color:#0b5;">Troubleshooting</h3>
+<table style="border-collapse:collapse;width:100%;font-size:14px;">
+  <thead>
+    <tr style="background:#f0f0f0;">
+      <th style="border:1px solid #ccc;padding:6px 10px;text-align:left;">Symptom</th>
+      <th style="border:1px solid #ccc;padding:6px 10px;text-align:left;">Fix</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 10px;"><strong>Listener prints nothing</strong></td>
+      <td style="border:1px solid #ccc;padding:6px 10px;">Work through, in order: (1) <strong>Unplug Ethernet / turn off VPN</strong> — be on lab Wi‑Fi only. (2) <code>ROS_DOMAIN_ID</code> must equal the robot's <strong>domain</strong> (from <code>cat /etc/qb3rt/domain_id</code>), <em>not</em> its IP. (3) The <code>&lt;Peer&gt;</code> IP in <code>rb3_dds.xml</code> must be the robot's IP. (4) <code>CYCLONEDDS_URI</code> is actually set (print it). (5) You can reach the robot: <code>ping 192.168.0.201</code>.</td>
+    </tr>
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 10px;">Still nothing, and you <em>must</em> keep Ethernet/VPN on</td>
+      <td style="border:1px solid #ccc;padding:6px 10px;">Force CycloneDDS onto your Wi‑Fi by <strong>your laptop's own lab IP</strong>. Find it — macOS: <code>ipconfig getifaddr en0</code>; Linux: <code>hostname -I</code>; Windows: <code>ipconfig</code> (the <code>192.168.0.x</code> address). Then add inside <code>&lt;General&gt;</code> in <code>rb3_dds.xml</code>:<br><code>&lt;Interfaces&gt;&lt;NetworkInterface address="192.168.0.YOURLAPTOP"/&gt;&lt;/Interfaces&gt;</code></td>
+    </tr>
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 10px;"><code>ros2: command not found</code></td>
+      <td style="border:1px solid #ccc;padding:6px 10px;">You didn't enter the environment — run <code>pixi shell</code> in your ROS pixi project first.</td>
+    </tr>
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 10px;"><code>Package 'demo_nodes_cpp' not found</code></td>
+      <td style="border:1px solid #ccc;padding:6px 10px;">Laptop: <code>pixi add ros-jazzy-demo-nodes-cpp</code>. Robot: tell your instructor.</td>
+    </tr>
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 10px;"><code>ssh: command not found</code> (Windows)</td>
+      <td style="border:1px solid #ccc;padding:6px 10px;">Use Windows Terminal/PowerShell (has <code>ssh</code>). If missing: Settings → Apps → Optional Features → add "OpenSSH Client", or use PuTTY.</td>
+    </tr>
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 10px;">Can't SSH / <code>Permission denied</code></td>
+      <td style="border:1px solid #ccc;padding:6px 10px;">Check the robot IP and password; test <code>ping 192.168.0.201</code> first.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 style="color:#0b5;">Cleanup</h3>
+<ul>
+  <li><code>Ctrl&nbsp;+&nbsp;C</code> in each terminal to stop the nodes.</li>
+  <li>In the robot terminal, type <code>exit</code> to close the SSH session.</li>
+</ul>
+
+<div style="border-left:4px solid #c0a000;background:#fdf6e3;padding:10px 14px;border-radius:4px;margin:16px 0;font-size:14px;color:#444;">
+  <strong>For instructors.</strong> Give each student their robot's <em>domain</em> and <em>IP</em> separately (they're decoupled: e.g. domain&nbsp;1 &rarr; IP&nbsp;.201, because <code>.1</code> is the AP gateway). Robots run CycloneDDS unicast (multicast off) on <code>ROS_DOMAIN_ID = domain</code>; ensure <code>ros-jazzy-demo-nodes-cpp</code> is installed on each and distribute the <code>ubuntu</code> password. The dominant support issue is multi‑homed laptops (corporate Ethernet / VPN) — pushing "lab Wi‑Fi only" up front avoids most of it.
+</div>
