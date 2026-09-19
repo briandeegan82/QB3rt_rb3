@@ -8,6 +8,13 @@
 #   DOMAIN_ID              ROS_DOMAIN_ID (written to /etc/qb3rt/domain_id)
 #   USB_RPLIDAR_SERIAL     CP2102N serial -> /dev/rplidar
 #   USB_WAVE_ROVER_SERIAL  CP2102N serial -> /dev/wave_rover
+#   WIFI_SSID, WIFI_PSK    dedicated network for this unit (load-balanced fleet);
+#                          when set, STATIC_IP is pinned ONLY to this SSID's
+#                          connection profile (created if it doesn't exist yet)
+#                          instead of every saved Wi-Fi net.
+#   WIFI_RESERVE_SSID, WIFI_RESERVE_PSK  fleet-wide backup network (hidden SSID);
+#                          profile is created/kept but NOT auto-connecting, so it
+#                          never competes with the primary WIFI_SSID above.
 set -euo pipefail
 
 : "${HOSTNAME_NEW:?}" "${DOMAIN_ID:?}"
@@ -47,12 +54,43 @@ else
     echo "  WARNING: USB serials not both set — skipping udev (set them in the unit profile)." >&2
 fi
 
-echo "== Static IP -> ${STATIC_IP:-<keep DHCP>} (ALL Wi-Fi nets) =="
-if [ -n "${STATIC_IP:-}" ]; then
-    # Pin EVERY saved Wi-Fi connection to the fixed address, so the unit comes up
-    # at the same IP no matter which lab AP it joins (all on one /24). Applied now
-    # but the active link is re-activated a few seconds AFTER this SSH session
-    # closes — switching the IP live would sever the connection we're on.
+schedule_switch() {  # $1 = connection name to bring up ~3s after this session closes
+    systemd-run --on-active=3 --unit=qb3rt-ipswitch nmcli connection up "$1" >/dev/null 2>&1 \
+        || ( nohup sh -c "sleep 3; nmcli connection up '$1'" >/dev/null 2>&1 & )
+}
+
+if [ -n "${STATIC_IP:-}" ] && [ -n "${WIFI_SSID:-}" ]; then
+    echo "== Static IP -> ${STATIC_IP} (dedicated net: ${WIFI_SSID}) =="
+    # Load-balanced fleet: pin the IP to ONE named SSID's connection profile only
+    # (creating it if this unit has never joined that network before — nmcli can
+    # write a profile's PSK/addressing without a live association). Other saved
+    # Wi-Fi profiles are left in place but deprioritized so the unit doesn't
+    # wander onto the wrong subnet's AP. Applied now but the active link switches
+    # a few seconds AFTER this SSH session closes — switching live would sever
+    # the connection we're on.
+    gw="${GATEWAY:-${STATIC_IP%.*}.1}"
+    if ! nmcli -t -f NAME connection show | grep -qFx "$WIFI_SSID"; then
+        nmcli connection add type wifi con-name "$WIFI_SSID" ifname "*" ssid "$WIFI_SSID" >/dev/null
+        echo "  created connection profile $WIFI_SSID"
+    fi
+    [ -n "${WIFI_PSK:-}" ] && nmcli connection modify "$WIFI_SSID" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$WIFI_PSK"
+    nmcli connection modify "$WIFI_SSID" \
+        ipv4.method manual ipv4.addresses "${STATIC_IP}/${PREFIX:-24}" \
+        ipv4.gateway "$gw" ipv4.dns "${DNS:-$gw}" \
+        connection.autoconnect yes connection.autoconnect-priority 10
+    echo "  pinned $WIFI_SSID -> ${STATIC_IP}/${PREFIX:-24} gw $gw"
+    while IFS=: read -r cname ctype; do
+        [ "$ctype" = "802-11-wireless" ] || continue
+        [ "$cname" = "$WIFI_SSID" ] && continue
+        nmcli connection modify "$cname" connection.autoconnect no && echo "  deprioritized $cname"
+    done < <(nmcli -t -f NAME,TYPE connection show)
+    schedule_switch "$WIFI_SSID"
+    echo "  active link switches to $WIFI_SSID ~3s after session ends"
+elif [ -n "${STATIC_IP:-}" ]; then
+    echo "== Static IP -> ${STATIC_IP} (ALL Wi-Fi nets) =="
+    # Legacy/back-compat: no dedicated SSID given — pin EVERY saved Wi-Fi
+    # connection to the fixed address, so the unit comes up at the same IP no
+    # matter which lab AP it joins (single flat-subnet fleet).
     gw="${GATEWAY:-${STATIC_IP%.*}.1}"; n=0
     while IFS=: read -r cname ctype; do
         [ "$ctype" = "802-11-wireless" ] || continue
@@ -65,9 +103,34 @@ if [ -n "${STATIC_IP:-}" ]; then
     else
         echo "  ${STATIC_IP}/${PREFIX:-24} gw $gw on $n net(s); active link switches ~3s after session ends"
         active="$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2=="802-11-wireless"{print $1; exit}')"
-        [ -n "$active" ] && { systemd-run --on-active=3 --unit=qb3rt-ipswitch nmcli connection up "$active" >/dev/null 2>&1 \
-            || ( nohup sh -c "sleep 3; nmcli connection up '$active'" >/dev/null 2>&1 & ); }
+        [ -n "$active" ] && schedule_switch "$active"
     fi
+else
+    echo "== Static IP -> <keep DHCP> =="
 fi
+
+if [ -n "${WIFI_RESERVE_SSID:-}" ]; then
+    echo "== Reserve network -> ${WIFI_RESERVE_SSID} (hidden, not auto-connecting) =="
+    # Fleet-wide backup network, kept on standby: profile exists so it can be
+    # brought up manually (nmcli connection up "$WIFI_RESERVE_SSID") without
+    # ever auto-joining and displacing the unit's primary dedicated network.
+    if ! nmcli -t -f NAME connection show | grep -qFx "$WIFI_RESERVE_SSID"; then
+        nmcli connection add type wifi con-name "$WIFI_RESERVE_SSID" ifname "*" \
+            ssid "$WIFI_RESERVE_SSID" -- 802-11-wireless.hidden yes >/dev/null
+        echo "  created connection profile $WIFI_RESERVE_SSID"
+    fi
+    [ -n "${WIFI_RESERVE_PSK:-}" ] && nmcli connection modify "$WIFI_RESERVE_SSID" \
+        wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$WIFI_RESERVE_PSK"
+    nmcli connection modify "$WIFI_RESERVE_SSID" connection.autoconnect no
+    echo "  profile ready, autoconnect off"
+fi
+
+echo "== Removing retired Wi-Fi profiles =="
+for RETIRED in ROS_NET ROS_NET_G037; do
+    while IFS=: read -r uuid cname; do
+        [ "$cname" = "$RETIRED" ] || continue
+        nmcli connection delete uuid "$uuid" >/dev/null && echo "  deleted $cname ($uuid)"
+    done < <(nmcli -t -f UUID,NAME connection show)
+done
 
 echo "Stamp done for ${HOSTNAME_NEW} (domain ${DOMAIN_ID})."
