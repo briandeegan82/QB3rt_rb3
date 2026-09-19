@@ -1,0 +1,9 @@
+# Managed by ansible role https_time_sync.
+[Unit]
+Description=Synchronize system clock over HTTPS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/https-time-sync

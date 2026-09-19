@@ -1,0 +1,15 @@
+---
+# HTTPS endpoints whose response Date header is used as the time source, tried
+# in order; first one that yields a usable, sane date wins.
+https_time_sync_urls:
+  - "https://www.google.com/"
+  - "https://www.cloudflare.com/"
+  - "https://www.microsoft.com/"
+
+# Reject a source whose Date header differs from our current clock by more
+# than this many seconds (protects against a bad/compromised endpoint).
+https_time_sync_max_diff_seconds: 3600
+
+# Timer cadence.
+https_time_sync_boot_delay: 30s
+https_time_sync_interval: 15min

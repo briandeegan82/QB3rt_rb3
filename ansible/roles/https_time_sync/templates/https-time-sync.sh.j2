@@ -1,0 +1,71 @@
+#!/bin/bash
+# Managed by ansible role https_time_sync — edit ansible/roles/https_time_sync
+# and re-run the playbook rather than hand-editing this file on the device.
+set -euo pipefail
+
+# HTTPS endpoints whose response Date header is used as the time source.
+URLS=(
+{% for url in https_time_sync_urls %}
+    "{{ url }}"
+{% endfor %}
+)
+
+# Reject a source more than this many seconds from our current clock.
+# --bootstrap widens this to 7 days for the first run on a unit whose clock
+# has never been set (no RTC battery -> boots at 1970 or days stale), so the
+# normal 1-hour sanity check doesn't reject the very correction it needs.
+MAX_DIFF_SECONDS="${MAX_DIFF_SECONDS:-{{ https_time_sync_max_diff_seconds }}}"
+if [[ "${1:-}" == "--bootstrap" ]]; then
+    MAX_DIFF_SECONDS=604800
+fi
+
+log() {
+    logger -t https-time-sync "$*"
+    echo "$*"
+}
+
+for url in "${URLS[@]}"; do
+    # Fetch only headers. --max-time prevents a dead server hanging the service.
+    date_header="$(
+        curl --silent --show-error \
+             --head \
+             --max-time 10 \
+             --connect-timeout 5 \
+             "$url" 2>/dev/null |
+        awk 'BEGIN{IGNORECASE=1} /^Date:/ {$1=""; sub(/^[ \t]+/, ""); print; exit}'
+    )"
+
+    if [[ -z "$date_header" ]]; then
+        log "No Date header received from $url"
+        continue
+    fi
+
+    # Convert RFC 7231 HTTP date to Unix epoch.
+    epoch="$(date -u -d "$date_header" +%s 2>/dev/null)" || {
+        log "Could not parse Date header from $url: $date_header"
+        continue
+    }
+
+    now="$(date +%s)"
+    difference=$(( epoch - now ))
+    (( difference < 0 )) && difference=$(( -difference ))
+
+    if (( difference > MAX_DIFF_SECONDS )); then
+        log "Rejecting $url: time differs by ${difference}s (max ${MAX_DIFF_SECONDS}s)"
+        continue
+    fi
+
+    log "Setting clock from $url: $date_header"
+
+    # Set the kernel clock.
+    date -u -s "@$epoch"
+
+    # Keep the hardware clock updated if an RTC exists.
+    hwclock --systohc 2>/dev/null || true
+
+    log "Clock successfully synchronized"
+    exit 0
+done
+
+log "ERROR: No HTTPS time source was usable"
+exit 1

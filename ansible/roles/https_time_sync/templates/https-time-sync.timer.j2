@@ -1,0 +1,11 @@
+# Managed by ansible role https_time_sync.
+[Unit]
+Description=Periodic HTTPS time synchronization
+
+[Timer]
+OnBootSec={{ https_time_sync_boot_delay }}
+OnUnitActiveSec={{ https_time_sync_interval }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

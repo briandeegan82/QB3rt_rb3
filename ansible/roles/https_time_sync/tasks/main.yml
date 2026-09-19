@@ -1,0 +1,76 @@
+---
+# chrony/timesyncd may or may not be installed depending on image/unit
+# history (see docs/system_audit_2026-07-16.md) — ignore "unit not found"
+# rather than failing the play.
+- name: Stop and disable chrony, if present
+  ansible.builtin.systemd:
+    name: chrony
+    state: stopped
+    enabled: false
+  become: true
+  failed_when: false
+
+- name: Stop and disable systemd-timesyncd, if present
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    state: stopped
+    enabled: false
+  become: true
+  failed_when: false
+
+- name: Install https-time-sync script
+  ansible.builtin.template:
+    src: https-time-sync.sh.j2
+    dest: /usr/local/sbin/https-time-sync
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install https-time-sync systemd service
+  ansible.builtin.template:
+    src: https-time-sync.service.j2
+    dest: /etc/systemd/system/https-time-sync.service
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: reload systemd
+
+- name: Install https-time-sync systemd timer
+  ansible.builtin.template:
+    src: https-time-sync.timer.j2
+    dest: /etc/systemd/system/https-time-sync.timer
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: reload systemd
+
+- name: Reload systemd now so the new units are visible below
+  ansible.builtin.meta: flush_handlers
+
+# Bootstrap: a unit with no RTC battery can boot days (or decades) off, which
+# the normal 1-hour sanity check would correctly reject. Run once with the
+# widened --bootstrap threshold so first contact isn't a manual step.
+- name: Bootstrap-correct the clock (first run only, widened sanity check)
+  ansible.builtin.command: /usr/local/sbin/https-time-sync --bootstrap
+  become: true
+  register: https_time_sync_bootstrap
+  changed_when: "'Clock successfully synchronized' in https_time_sync_bootstrap.stdout"
+
+- name: Enable and start the https-time-sync timer
+  ansible.builtin.systemd:
+    name: https-time-sync.timer
+    state: started
+    enabled: true
+  become: true
+
+- name: Read back device clock
+  ansible.builtin.command: date -u
+  changed_when: false
+  register: https_time_sync_device_clock
+
+- name: Report device clock
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} clock now: {{ https_time_sync_device_clock.stdout }}"

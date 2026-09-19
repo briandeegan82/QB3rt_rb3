@@ -1,0 +1,15 @@
+---
+# Deploy the HTTPS Date-header time sync hack (see docs/UBUNTU_MIGRATION.md /
+# README.md "Operational gotchas #1" for why: the RB3 has no working RTC and
+# boots with a wildly wrong clock, and a mid-run NTP step breaks the EKF).
+#
+# Test run against one unit:
+#   ansible-playbook playbooks/https-time-sync.yml
+#
+# Once validated, add more hosts to [qb3rt_time_sync_test] (or a new group)
+# in inventory/hosts.ini and target them with -l.
+- name: Deploy HTTPS-based clock sync
+  hosts: qb3rt_time_sync_test
+  gather_facts: false
+  roles:
+    - https_time_sync
