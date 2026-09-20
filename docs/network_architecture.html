@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QB3rt Fleet — Network Architecture &amp; Ansible</title>
+<style>
+  :root {
+    --accent: #0b5; --accent-dark: #094;
+    --bg: #ffffff; --panel: #f6f8fa; --border: #d8dee4;
+    --text: #1b1f23; --muted: #57606a; --code-bg: #1e1e1e; --code-fg: #eaeaea;
+    --warn-border: #c0392b; --warn-bg: #fdecea;
+    --info-border: #2b7ad1; --info-bg: #eef4fb;
+    --odd: #7b4fbf; --even: #2b7ad1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --muted:#9198a1;
+      --warn-bg:#3a1d1a; --info-bg:#12233a; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 920px; margin: 0 auto; padding: 32px 20px 80px;
+    line-height: 1.55;
+  }
+  h1 { font-size: 1.7rem; margin-bottom: 4px; }
+  h2 { color: var(--accent-dark); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-top: 44px; }
+  h3 { color: var(--accent-dark); margin-top: 28px; }
+  .subtitle { color: var(--muted); margin-top: 0; margin-bottom: 28px; }
+  code { font-family: Consolas, Menlo, monospace; background: var(--panel); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+  pre { background: var(--code-bg); color: var(--code-fg); padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-family: Consolas, Menlo, monospace; font-size: 13.5px; line-height: 1.5; }
+  pre code { background: none; padding: 0; color: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 0.93rem; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  th { background: var(--panel); }
+  td.mono, th.mono { font-family: Consolas, Menlo, monospace; font-size: 0.9em; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: 600; }
+  .badge.odd { background: color-mix(in srgb, var(--odd) 18%, transparent); color: var(--odd); }
+  .badge.even { background: color-mix(in srgb, var(--even) 18%, transparent); color: var(--even); }
+  .note { border-left: 4px solid var(--info-border); background: var(--info-bg); padding: 10px 14px; border-radius: 4px; margin: 14px 0; }
+  .warn { border-left: 4px solid var(--warn-border); background: var(--warn-bg); padding: 10px 14px; border-radius: 4px; margin: 14px 0; }
+  .todo { border-left: 4px solid #d4a017; background: color-mix(in srgb, #d4a017 12%, transparent); padding: 10px 14px; border-radius: 4px; margin: 14px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .diagram { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; overflow-x: auto; }
+  .diagram pre { background: none; color: var(--text); margin: 0; }
+  footer { margin-top: 60px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); padding-top: 12px; }
+</style>
+</head>
+<body>
+
+<h1>QB3rt Fleet — Network Architecture &amp; Ansible</h1>
+<p class="subtitle">How the 14 RB3&nbsp;Gen&nbsp;2 units, the ROS&nbsp;2/DDS layer, and the Ansible tooling in this repo fit together. Reflects the state of the repo as of the <code>lab-and-demo-nodes</code> branch.</p>
+
+<h2>1. Physical network layout</h2>
+<p>The fleet is split across two separate, non-bridged Wi-Fi networks to load-balance 14 devices across two APs:</p>
+<table>
+  <tr><th>Network</th><th class="mono">SSID</th><th class="mono">Subnet</th><th>Members</th></tr>
+  <tr><td><span class="badge odd">ODD</span></td><td class="mono">ROS_NET_ODD</td><td class="mono">192.168.1.0/24</td><td>units 1, 3, 5, 9, 11, 13, 15</td></tr>
+  <tr><td><span class="badge even">EVEN</span></td><td class="mono">ROS_NET_EVEN</td><td class="mono">192.168.2.0/24</td><td>units 2, 6, 8, 10, 12, 14, 16</td></tr>
+</table>
+<p>Each unit's static IP matches its id on its own subnet (<code>192.168.&lt;1|2&gt;.&lt;id&gt;</code>), with one legacy exception: unit&nbsp;1 is <code>192.168.1.101</code> rather than <code>.1</code> (pre-dates the current per-id convention). A hidden reserve SSID, <code>UoGPSK</code>, is configured fleet-wide as a fallback and never auto-connects.</p>
+<div class="warn"><strong>The two networks are not bridged/routed.</strong> A laptop on one subnet cannot reach units on the other — there is no L3 path between them. To reach the other half you must physically switch your Wi-Fi association (see §5).</div>
+
+<div class="diagram">
+<pre>┌─────────────────────────────┐        ┌─────────────────────────────┐
+│   ROS_NET_ODD  192.168.1.0/24│        │  ROS_NET_EVEN  192.168.2.0/24│
+│                               │        │                               │
+│  qb3rt-1  .101  domain 1     │        │  qb3rt-2   .2   domain 2     │
+│  qb3rt-3  .3    domain 3     │        │  qb3rt-6   .6   domain 6     │
+│  qb3rt-5  .5    domain 5     │        │  qb3rt-8   .8   domain 8     │
+│  qb3rt-9  .9    domain 9     │        │  qb3rt-10  .10  domain 10    │
+│  qb3rt-11 .11   domain 11    │        │  qb3rt-12  .12  domain 12    │
+│  qb3rt-13 .13   domain 13    │        │  qb3rt-14  .14  domain 14    │
+│  qb3rt-15 .15   domain 15    │        │  qb3rt-16  .16  domain 16    │
+└──────────────┬────────────────┘        └──────────────┬────────────────┘
+               │                                          │
+               │        (not bridged — no L3 path)        │
+               │                                          │
+               └──────── laptop joins ONE at a time ───────┘
+                          (Wi-Fi association switch)
+</pre>
+</div>
+
+<h2>2. ROS&nbsp;2 / DDS setup</h2>
+
+<h3>Domain IDs</h3>
+<p>Every unit's <code>ROS_DOMAIN_ID</code> equals its unit id (e.g. <code>qb3rt-6</code> → domain 6). On the robot this is written to <code>/etc/qb3rt/domain_id</code> by <code>stamp/stamp_unit.sh</code> and read at login by <code>/etc/profile.d/qb3rt-ros-env.sh</code> (<code>system/qb3rt-ros-env.sh</code> in the repo). Note that domain id and IP address are two independent numbers — don't assume they match (unit&nbsp;1 is domain&nbsp;1 but IP <code>.101</code>).</p>
+
+<h3>Middleware: CycloneDDS, unicast-only</h3>
+<p>The fleet standardises on <strong>CycloneDDS</strong> (<code>RMW_IMPLEMENTATION=rmw_cyclonedds_cpp</code>) rather than the default FastRTPS, because <strong>the lab APs have multicast disabled</strong> (<code>ansible/roles/ros2_demo_nodes/defaults/main.yml</code>). ROS&nbsp;2's normal zero-config discovery relies on multicast SPDP announcements — with that off, every participant needs an explicit <strong>unicast peer list</strong> or it discovers nothing.</p>
+<p>Each robot's CycloneDDS config (deployed from <code>system/cyclonedds.xml</code> to <code>/etc/qb3rt/cyclonedds.xml</code>) sets:</p>
+<pre><code>&lt;Domain Id="any"&gt;         &lt;!-- follows whatever ROS_DOMAIN_ID is exported --&gt;
+  &lt;AllowMulticast&gt;false&lt;/AllowMulticast&gt;
+  &lt;NetworkInterface name="wlan0"/&gt;
+  &lt;Peers&gt;
+    &lt;Peer address="localhost"/&gt;
+    &lt;Peer address="192.168.0.101"/&gt;   &lt;!-- stale: pre-dates the ODD/EVEN split --&gt;
+  &lt;/Peers&gt;
+&lt;/Domain&gt;</code></pre>
+<div class="todo"><strong>Known gap:</strong> the robot-side peer list still only names <code>192.168.0.101</code>, a single address from the old pre-split <code>192.168.0.0/24</code> network. In practice this doesn't block laptop-initiated discovery — once the laptop announces itself to a robot's real IP, RTPS discovery converges bidirectionally regardless of what the robot's own peer list says — but it means <em>robot-to-robot</em> discovery on the current subnets is effectively unconfigured. Worth cleaning up in <code>system/cyclonedds.xml</code> if multi-robot coordination is ever needed.</div>
+<p>Large-message tuning (camera frames, costmaps) also lives here: <code>SocketReceiveBufferSize</code>/<code>SocketSendBufferSize</code> raised past the kernel's ~208&nbsp;kB default, backed by <code>net.core.rmem_max</code> in <code>/etc/sysctl.d/98-agv-dds.conf</code>.</p>
+
+<h3>Laptop-side DDS config</h3>
+<p>The laptop needs its own CycloneDDS peer list, kept <strong>outside this repo</strong> at <code>~/cyclonedds.xml</code> (referenced by <code>laptop/qb3rt_env.sh</code> via <code>CYCLONEDDS_URI</code>). For fleet-wide monitoring it should list every unit's static IP as an explicit unicast peer, e.g.:</p>
+<pre><code>&lt;Domain Id="any"&gt;
+  &lt;NetworkInterface name="wlp4s0"/&gt;     &lt;!-- match your active fleet-net NIC --&gt;
+  &lt;AllowMulticast&gt;false&lt;/AllowMulticast&gt;
+  &lt;Discovery&gt;
+    &lt;MaxAutoParticipantIndex&gt;16&lt;/MaxAutoParticipantIndex&gt;
+    &lt;Peers&gt;
+      &lt;Peer address="localhost"/&gt;
+      &lt;Peer address="192.168.1.101"/&gt; &lt;!-- qb3rt-1  --&gt;
+      &lt;Peer address="192.168.1.3"/&gt;   &lt;!-- qb3rt-3  --&gt;
+      &lt;!-- ...one Peer per unit, both subnets; the unreachable
+           half is simply ignored while on the other Wi-Fi --&gt;
+    &lt;/Peers&gt;
+  &lt;/Discovery&gt;
+&lt;/Domain&gt;</code></pre>
+<div class="note">Keep <code>MaxAutoParticipantIndex</code> modest (10–20) on a monitoring laptop. With multicast off, CycloneDDS probes participant indexes <code>0..MaxAutoParticipantIndex</code> <em>per peer</em> — a 14-peer list × <code>120</code> (a value copied from a dense single-robot Nav2 config where many local participants were expected) multiplies into thousands of unicast probes and visibly delays discovery of whichever peer's turn comes late in the cycle. Each robot only ever runs a handful of nodes, so a small value is enough and discovery converges in a couple of seconds instead of 10–20+.</div>
+<div class="warn"><strong><code>ros2</code>'s background CLI daemon caches its DDS config at daemon <em>startup</em>, per domain.</strong> If you edit <code>cyclonedds.xml</code>, run <code>ros2 daemon stop</code> (or <code>pkill -f ros2-daemon</code>) before retesting — otherwise you'll be silently talking to a daemon that's still running the old config, which looks identical to a network fault (<code>ros2 topic list</code> hangs or returns nothing).</div>
+
+<h3>The IMU driver specifically</h3>
+<p>The onboard ICM-42688 IMU is published by <code>qrb_ros_imu</code>. Two ways to bring it up:</p>
+<ul>
+  <li><code>ros2 run qrb_ros_imu imu_node</code> — raw node, publishes bare <code>/imu</code>. Good for a quick connectivity smoke test.</li>
+  <li><code>ros2 launch QB3rt imu.launch.py</code> (pulled in by <code>odometry_bringup.launch.py</code>/<code>full_stack.launch.py</code>) — the production path: loads it as a composable node and remaps to <code>/imu/data</code>, which is what <code>config/ekf.yaml</code>'s EKF actually subscribes to.</li>
+</ul>
+<p>Either way, the node talks to a lower-level <code>sensor-service</code> systemd unit (the Qualcomm sensor HAL, <code>/usr/bin/sensor_service</code>) over a local socket. If <code>imu_node</code> logs repeated <code>SensorClient: please check if the sensor service ... is running</code> and eventually exits after ~30 retries, the HAL daemon itself has gone idle/stuck — <code>sudo systemctl restart sensor-service</code> on the unit, then relaunch <code>imu_node</code>, resolves it (observed on 2 of 14 units during a 2026-09-20 fleet sweep).</p>
+
+<h2>3. Ansible for fleet management</h2>
+<p>Ansible content lives under <code>ansible/</code> and is the newest tooling layer in the repo (first added on this branch), sitting on top of conventions already established by <code>stamp/</code>: SSH as <code>ubuntu</code> with the shared key <code>~/.ssh/qb3rt_fleet</code>, one unit reachable at a time over the lab Wi-Fi, and passwordless <code>sudo</code> pre-granted by <code>system/90-qb3rt-sudoers</code> so <code>become: true</code> tasks run unattended.</p>
+
+<h3>Inventory</h3>
+<p><code>ansible/inventory/hosts.ini</code> hand-lists all 14 units, split into <code>qb3rt_odd</code> and <code>qb3rt_even</code> groups (both rolled up under <code>qb3rt_fleet</code>), mirroring <code>units/&lt;id&gt;.conf</code>. There's no dynamic inventory yet — host/IP pairs are kept in sync by hand.</p>
+<pre><code>[qb3rt_odd]
+qb3rt-1  ansible_host=192.168.1.101
+qb3rt-3  ansible_host=192.168.1.3
+...
+[qb3rt_even]
+qb3rt-2  ansible_host=192.168.2.2
+...
+[qb3rt_fleet:children]
+qb3rt_odd
+qb3rt_even
+
+[qb3rt_fleet:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/qb3rt_fleet</code></pre>
+<div class="warn">The machine running <code>ansible-playbook</code> must itself be joined to whichever of ROS_NET_ODD/EVEN it's targeting — same non-bridged-subnet constraint as everything else here. A single playbook run only ever reaches one half of the fleet.</div>
+
+<h3>Roles</h3>
+<table>
+  <tr><th>Role</th><th>Purpose</th></tr>
+  <tr>
+    <td class="mono">https_time_sync</td>
+    <td>Works around the RB3's missing RTC battery. Instead of NTP (whose mid-run clock <em>step</em> can blow up the EKF's covariance), it curls a few HTTPS endpoints, sanity-checks the <code>Date</code> header, and steps the clock once at boot (<code>--bootstrap</code>, wide ±7-day tolerance) then re-checks every 15&nbsp;min via a systemd timer at a tight ±1h tolerance. Also stops/disables any pre-existing chrony/timesyncd so they don't race the new timer.</td>
+  </tr>
+  <tr>
+    <td class="mono">ros2_demo_nodes</td>
+    <td>Backfills <code>ros-jazzy-demo-nodes-cpp</code> + <code>ros-jazzy-rmw-cyclonedds-cpp</code> fleet-wide via apt, for units flashed from an image older than the golden image that ships them by default. Idempotent apt install + a package-presence check.</td>
+  </tr>
+</table>
+
+<h3>Running a playbook</h3>
+<pre><code>cd ansible
+ansible-playbook playbooks/https-time-sync.yml          # whole current inventory
+ansible-playbook playbooks/ros2-demo-nodes.yml -l qb3rt_even   # just EVEN half
+ansible-playbook playbooks/ros2-demo-nodes.yml -l qb3rt-6      # just one unit</code></pre>
+<p>Use <code>-l &lt;group_or_host&gt;</code> to control blast radius — the standard pattern in this repo is to validate against one unit first, then widen.</p>
+
+<h2>4. Unit inventory &amp; MAC addresses</h2>
+<table>
+  <tr><th>Unit</th><th>Net</th><th class="mono">Static IP</th><th>Domain</th><th class="mono">Wi-Fi MAC (wlan0)</th></tr>
+  <tr><td>qb3rt-1</td><td><span class="badge odd">ODD</span></td><td class="mono">192.168.1.101</td><td>1</td><td class="mono">f0:74:e4:82:00:bf</td></tr>
+  <tr><td>qb3rt-2</td><td><span class="badge even">EVEN</span></td><td class="mono">192.168.2.2</td><td>2</td><td class="mono">f0:74:e4:82:02:8d</td></tr>
+  <tr><td>qb3rt-3</td><td><span class="badge odd">ODD</span></td><td class="mono">192.168.1.3</td><td>3</td><td class="mono">f0:74:e4:82:04:50</td></tr>
+  <tr><td>qb3rt-5</td><td><span class="badge odd">ODD</span></td><td class="mono">192.168.1.5</td><td>5</td><td class="mono">f0:74:e4:81:fe:99</td></tr>
+  <tr><td>qb3rt-6</td><td><span class="badge even">EVEN</span></td><td class="mono">192.168.2.6</td><td>6</td><td class="mono">f0:74:e4:81:fe:c0</td></tr>
+  <tr><td>qb3rt-8</td><td><span class="badge even">EVEN</span></td><td class="mono">192.168.2.8</td><td>8</td><td class="mono">f0:74:e4:82:02:dc</td></tr>
+  <tr><td>qb3rt-9</td><td><span class="badge odd">ODD</span></td><td class="mono">192.168.1.9</td><td>9</td><td class="mono">f0:74:e4:66:b4:39</td></tr>
+  <tr><td>qb3rt-10</td><td><span class="badge even">EVEN</span></td><td class="mono">192.168.2.10</td><td>10</td><td class="mono">f0:74:e4:82:02:e4</td></tr>
+  <tr><td>qb3rt-11</td><td><span class="badge odd">ODD</span></td><td class="mono">192.168.1.11</td><td>11</td><td class="mono">f0:74:e4:82:00:5c</td></tr>
+  <tr><td>qb3rt-12</td><td><span class="badge even">EVEN</span></td><td class="mono">192.168.2.12</td><td>12</td><td class="mono">f0:74:e4:82:02:a9</td></tr>
+  <tr><td>qb3rt-13</td><td><span class="badge odd">ODD</span></td><td class="mono">192.168.1.13</td><td>13</td><td class="mono">f0:74:e4:81:fe:aa</td></tr>
+  <tr><td>qb3rt-14</td><td><span class="badge even">EVEN</span></td><td class="mono">192.168.2.14</td><td>14</td><td class="mono">f0:74:e4:82:01:f2</td></tr>
+  <tr><td>qb3rt-15</td><td><span class="badge odd">ODD</span></td><td class="mono">192.168.1.15</td><td>15</td><td class="mono">f0:74:e4:82:03:52</td></tr>
+  <tr><td>qb3rt-16</td><td><span class="badge even">EVEN</span></td><td class="mono">192.168.2.16</td><td>16</td><td class="mono">f0:74:e4:82:03:38</td></tr>
+</table>
+<div class="note">All 14 share the <code>f0:74:e4</code> OUI prefix (Qualcomm RB3 Gen&nbsp;2 Wi-Fi module). Captured for a campus-IT DHCP reservation request on the <code>UoGPSK</code> reserve network — that network's DHCP snooping/dynamic ARP inspection drops self-assigned static IPs, so a fixed IP binding per MAC is the only way to get a stable address on it. Not yet recorded in any tracked file in this repo (<code>units/*.conf</code> only has this for unit 16, and only in history prior to <code>b97102c</code> — worth adding a <code>WIFI_MAC=</code> field to each <code>units/&lt;id&gt;.conf</code> so it stops depending on scratch files from past sessions).</div>
+
+<h2>5. Accessing units from the laptop</h2>
+
+<h3>Step 1 — join the right Wi-Fi</h3>
+<p>Pick ODD or EVEN based on which unit(s) you need; the two subnets are not bridged, so you can only reach one half at a time.</p>
+<pre><code>nmcli connection up ROS_NET_ODD      # or ROS_NET_EVEN
+ip -4 addr show wlp4s0               # confirm you got a 192.168.&lt;1|2&gt;.x lease</code></pre>
+<div class="warn">If your laptop is also configured to auto-join other known networks (campus Wi-Fi, eduroam, etc.), NetworkManager can silently roam away from ROS_NET_ODD/EVEN in the background — mid-session connectivity loss to the fleet with no obvious cause is often this, not a robot-side fault. Check <code>nmcli -t -f active,ssid dev wifi | grep '^yes'</code> if something that was working stops working.</div>
+
+<h3>Step 2 — SSH to a specific unit</h3>
+<pre><code>ssh -i ~/.ssh/qb3rt_fleet -o IdentitiesOnly=yes \
+    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null \
+    ubuntu@&lt;unit-static-ip&gt;</code></pre>
+<p>The robot's ROS&nbsp;2 environment auto-loads at login via <code>/etc/profile.d/qb3rt-ros-env.sh</code> (domain id, RMW, CycloneDDS URI all set automatically) — nothing extra to source for an interactive shell. For a <em>non-interactive</em> <code>ssh host "command"</code>, explicitly source it first, since profile.d isn't guaranteed to run for non-login shells:</p>
+<pre><code>ssh -i ~/.ssh/qb3rt_fleet ubuntu@&lt;ip&gt; \
+  'source /etc/profile.d/qb3rt-ros-env.sh; ros2 topic list'</code></pre>
+
+<h3>Step 3 — talk to a unit's ROS graph from the laptop</h3>
+<pre><code># match the unit's domain (== its unit id) and RMW:
+export ROS_DOMAIN_ID=&lt;unit id&gt;
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI=file://$HOME/cyclonedds.xml   # your fleet peer list, §2
+
+ros2 topic list
+ros2 topic hz /imu
+ros2 topic echo /imu/data --once</code></pre>
+<div class="note">Switching domains often enough to matter? <code>ros2</code> spins up a separate background daemon per domain the first time you touch it (<code>ros2-daemon --ros-domain-id N ...</code>). These accumulate; if one was started before you last edited <code>cyclonedds.xml</code> it'll be stuck on stale config. <code>pkill -f ros2-daemon</code> clears all of them for a clean slate.</div>
+
+<h3>Step 4 (optional) — run the full Nav2 laptop bringup</h3>
+<p>For the laptop-driven Nav2 workflow (as opposed to ad-hoc topic checks), see <code>laptop/README.md</code> — it covers clock-sync ordering, run order for the robot vs. laptop stacks, and the planner/controller tuning notes. That workflow currently targets a single paired robot (fixed domain in <code>laptop/qb3rt_env.sh</code>), distinct from the fleet-wide monitoring config described in §2 above.</p>
+
+<footer>Generated 2026-09-20 from the <code>lab-and-demo-nodes</code> branch. Source of truth for anything here is the repo itself (<code>system/</code>, <code>ansible/</code>, <code>units/</code>, <code>stamp/</code>) — re-check before relying on specifics that may have drifted.</footer>
+
+</body>
+</html>
