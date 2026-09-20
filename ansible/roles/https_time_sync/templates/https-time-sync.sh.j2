@@ -10,14 +10,19 @@ URLS=(
 {% endfor %}
 )
 
-# Reject a source more than this many seconds from our current clock.
-# --bootstrap widens this to 7 days for the first run on a unit whose clock
-# has never been set (no RTC battery -> boots at 1970 or days stale), so the
-# normal 1-hour sanity check doesn't reject the very correction it needs.
+# Reject a source more than this many seconds from our current clock. Boards
+# with no RTC battery can come up arbitrarily stale (observed: 50+ days) since
+# they boot to a fixed build-time default rather than drifting from a real
+# clock, so there's no bounded window that's both "wide enough to bootstrap
+# any unit" and "tight enough to catch a bad source" -- --bootstrap instead
+# skips this check entirely. That's safe specifically in bootstrap mode
+# because the whole premise of running it is "the local clock is known
+# garbage," so comparing a candidate time against it can't actually detect a
+# bad *source* -- the URLS list (fixed, trusted, well-known sites) is what
+# guards against that, not this diff.
 MAX_DIFF_SECONDS="${MAX_DIFF_SECONDS:-{{ https_time_sync_max_diff_seconds }}}"
-if [[ "${1:-}" == "--bootstrap" ]]; then
-    MAX_DIFF_SECONDS=604800
-fi
+BOOTSTRAP=0
+[[ "${1:-}" == "--bootstrap" ]] && BOOTSTRAP=1
 
 log() {
     logger -t https-time-sync "$*"
@@ -26,14 +31,24 @@ log() {
 
 for url in "${URLS[@]}"; do
     # Fetch only headers. --max-time prevents a dead server hanging the service.
+    # --insecure: a unit with no RTC can boot with the clock far enough in the
+    # past that the *current* live cert on these sites isn't valid yet from
+    # its point of view ("certificate is not yet valid") -- exactly the
+    # skew this script exists to fix, so we can't require a valid chain to
+    # read the Date header. Safe here because nothing from the response body
+    # is trusted or executed, only a header, and outside --bootstrap the
+    # resulting time is still sanity-checked against MAX_DIFF_SECONDS below.
+    # `|| true` on the assignment: under `set -e`+pipefail a curl failure
+    # (bad cert, timeout, DNS, refused) would otherwise abort the whole
+    # script on the first bad URL instead of falling through to the next one.
     date_header="$(
-        curl --silent --show-error \
+        curl --silent --show-error --insecure \
              --head \
              --max-time 10 \
              --connect-timeout 5 \
              "$url" 2>/dev/null |
         awk 'BEGIN{IGNORECASE=1} /^Date:/ {$1=""; sub(/^[ \t]+/, ""); print; exit}'
-    )"
+    )" || true
 
     if [[ -z "$date_header" ]]; then
         log "No Date header received from $url"
@@ -50,7 +65,7 @@ for url in "${URLS[@]}"; do
     difference=$(( epoch - now ))
     (( difference < 0 )) && difference=$(( -difference ))
 
-    if (( difference > MAX_DIFF_SECONDS )); then
+    if (( BOOTSTRAP == 0 )) && (( difference > MAX_DIFF_SECONDS )); then
         log "Rejecting $url: time differs by ${difference}s (max ${MAX_DIFF_SECONDS}s)"
         continue
     fi

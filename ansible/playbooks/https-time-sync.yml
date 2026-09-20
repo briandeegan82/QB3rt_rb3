@@ -3,13 +3,15 @@
 # README.md "Operational gotchas #1" for why: the RB3 has no working RTC and
 # boots with a wildly wrong clock, and a mid-run NTP step breaks the EKF).
 #
-# Test run against one unit:
+# Whole fleet (only reaches whichever of ROS_NET_ODD/EVEN this laptop is
+# currently joined to — see inventory/hosts.ini):
 #   ansible-playbook playbooks/https-time-sync.yml
 #
-# Once validated, add more hosts to [qb3rt_time_sync_test] (or a new group)
-# in inventory/hosts.ini and target them with -l.
+# One network half, or one unit, to control blast radius:
+#   ansible-playbook playbooks/https-time-sync.yml -l qb3rt_even
+#   ansible-playbook playbooks/https-time-sync.yml -l qb3rt-6
 - name: Deploy HTTPS-based clock sync
-  hosts: qb3rt_time_sync_test
+  hosts: qb3rt_fleet
   gather_facts: false
   roles:
     - https_time_sync
