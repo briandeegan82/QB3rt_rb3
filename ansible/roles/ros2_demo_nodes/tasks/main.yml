@@ -1,0 +1,18 @@
+---
+# Golden images built after commit 253f19e already ship these apt packages
+# (reference/00_apt_base.sh), but units flashed from an older image predate
+# that — this role backfills them fleet-wide regardless of image vintage.
+- name: Install ROS 2 demo nodes + CycloneDDS RMW
+  ansible.builtin.apt:
+    name: "{{ ros2_demo_nodes_packages }}"
+    state: present
+  become: true
+
+- name: Confirm demo_nodes_cpp is on the ROS 2 package path
+  ansible.builtin.command: bash -lc "ros2 pkg list | grep -x demo_nodes_cpp"
+  changed_when: false
+  register: ros2_demo_nodes_pkg_check
+
+- name: Report result
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: demo_nodes_cpp present ({{ ros2_demo_nodes_pkg_check.stdout }})"

@@ -1,0 +1,7 @@
+---
+# ros-jazzy-demo-nodes-cpp: talker/listener + friends (see docs/lab_talker_listener.html).
+# ros-jazzy-rmw-cyclonedds-cpp: lab APs have multicast off, so the fleet runs
+# CycloneDDS with explicit unicast peers rather than the default RMW.
+ros2_demo_nodes_packages:
+  - ros-jazzy-demo-nodes-cpp
+  - ros-jazzy-rmw-cyclonedds-cpp

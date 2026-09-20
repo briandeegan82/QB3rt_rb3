@@ -1,0 +1,18 @@
+---
+# Ensure ros-jazzy-demo-nodes-cpp + rmw-cyclonedds-cpp are installed fleet-wide
+# (see docs/lab_talker_listener.html for the unicast talker/listener lab this
+# enables). Backfills units flashed from a golden image older than commit
+# 253f19e, which is where these packages were added to the build script.
+#
+# Whole fleet (only reaches whichever of ROS_NET_ODD/EVEN this laptop is
+# currently joined to — see inventory/hosts.ini):
+#   ansible-playbook playbooks/ros2-demo-nodes.yml
+#
+# One network half, or one unit, to control blast radius:
+#   ansible-playbook playbooks/ros2-demo-nodes.yml -l qb3rt_odd
+#   ansible-playbook playbooks/ros2-demo-nodes.yml -l qb3rt-9
+- name: Install ROS 2 Jazzy demo nodes (talker/listener) + CycloneDDS RMW
+  hosts: qb3rt_fleet
+  gather_facts: false
+  roles:
+    - ros2_demo_nodes
