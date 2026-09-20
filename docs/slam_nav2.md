@@ -9,12 +9,10 @@ For remote Nav2 on a laptop see [laptop/README.md](../laptop/README.md).
 
 ## Preflight
 
-```bash
-source /root/rover_env.sh
-```
-
-Required for a correct ROS/DDS env and before any writes under `/usr`. Let the
-RB3 clock sync (or freeze NTP) **before** launching — see laptop/README.md.
+SSH in as `ubuntu@<unit-ip>` (`ssh -i ~/.ssh/qb3rt_fleet ubuntu@<ip>`) — the
+ROS/DDS environment (domain id, RMW, CycloneDDS URI) auto-loads at login via
+`/etc/profile.d/qb3rt-ros-env.sh`, nothing to source by hand. Let the RB3
+clock sync (or freeze NTP) **before** launching — see laptop/README.md.
 
 ## Architecture / TF ownership
 
@@ -67,8 +65,6 @@ Drive calibration (open-loop boost, trim, deadband):
 ### Recommended: manual two-step
 
 ```bash
-source /root/rover_env.sh
-
 # 1) base + VIO + EKF (no SLAM, no Nav2)
 ros2 launch QB3rt odometry_bringup.launch.py
 #    figure-8, then STAND STILL until "VIO metric convergence confirmed"

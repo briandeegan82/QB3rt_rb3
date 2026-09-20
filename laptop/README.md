@@ -19,22 +19,20 @@ drops mid-drive.
    sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup
    ```
 
-2. Install the laptop bundle from this repo (or from the robot mount):
+2. Install the laptop bundle from a git clone of this repo:
 
    ```bash
-   # from a git clone on the laptop:
    bash /path/to/QB3rt/laptop/install_on_laptop.sh
-   # or if the robot is mounted at ~/mnt/rb3:
-   bash ~/mnt/rb3/root/QB3rt/laptop/install_on_laptop.sh
    ```
 
    This copies configs + the no-spin behavior trees to `~/qb3rt_laptop`.
-   Re-run after editing the canonical copies under `laptop/` in the repo
-   (or `/root/QB3rt/laptop/` on the robot).
+   Re-run after editing the canonical copies under `laptop/` in the repo.
 
 3. Configure CycloneDDS on the laptop (`~/cyclonedds.xml`) to peer with the
-   robot’s Wi‑Fi IP (lab default often `192.168.0.100` — set yours). The robot
-   side uses `/opt/cyclonedds.xml` via `rover_env.sh`.
+   robot's Wi‑Fi IP (unit-specific — see `units/<id>.conf` `STATIC_IP`, or
+   `docs/network_architecture.html` for the current ROS_NET_ODD/EVEN layout).
+   The robot side uses `/etc/qb3rt/cyclonedds.xml`, loaded via
+   `/etc/profile.d/qb3rt-ros-env.sh`.
 
 ## Clock sync (do not skip)
 
@@ -78,13 +76,14 @@ Consider `fake-hwclock` (or fixing the RTC battery) to shrink the boot-time step
 
 ## Run order
 
-1. **Robot** (in your device shell). Make sure the clock is already synced
-   (above). Two options:
+1. **Robot** — `ssh -i ~/.ssh/qb3rt_fleet ubuntu@<unit-ip>`. The ROS/DDS
+   environment (domain id, RMW, CycloneDDS URI) auto-loads at login via
+   `/etc/profile.d/qb3rt-ros-env.sh` — nothing to source by hand. Make sure the
+   clock is already synced (above). Two options:
 
    **Manual two-step (recommended):** start odometry, confirm it, then SLAM.
 
    ```bash
-   source /root/rover_env.sh
    ros2 launch QB3rt odometry_bringup.launch.py
    #   do the ORB-SLAM3 figure-8 ritual, then STAND STILL until the relay logs
    #   "VIO metric convergence confirmed" (/vio/ready=true), and
@@ -95,7 +94,6 @@ Consider `fake-hwclock` (or fixing the RTC battery) to shrink the boot-time step
    **One-shot (automatic VIO gate):**
 
    ```bash
-   source /root/rover_env.sh
    ros2 launch QB3rt full_stack.launch.py enable_nav:=false
    ```
 

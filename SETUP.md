@@ -1,95 +1,83 @@
-# One-click RB3 setup / update
+# RB3 setup / update — quick reference
 
-Laptop entry point (this git repo):
+Fleet runs **Ubuntu 24.04**, provisioned golden-image + SSH (not adb). This
+page is a quick command reference; the full walkthrough (flashing a golden
+image, per-unit stamping, prerequisites) is
+**[docs/UBUNTU_MIGRATION.md](docs/UBUNTU_MIGRATION.md)** — read that first if
+you haven't provisioned a unit before.
+
+Laptop entry point (this git repo, cloned locally):
 
 ```bash
 cd /path/to/QB3rt          # git clone of briandeegan82/QB3rt_rb3
-./fetch_overlay.sh         # once: download slim share/lib from GitHub Release
-./deploy_via_adb.sh --unit 46927088 --clean --bootstrap
 ```
 
-If `./fetch_overlay.sh` fails (no Release / no `overlay_release.env` yet), either:
-
-- copy a local `qb3rt-overlay.tar.gz` next to the script and extract into
-  `./overlay/`, or
-- point `OVERLAY_ROOT` at an existing slim `share/` + `lib/` tree, or
-- build one with `./pack_overlay.sh` from a machine that still has the dump
-  (see below).
-
-Then re-run deploy with `--bootstrap`.
-
-## Layout
-
-| path | in git? | role |
-|------|---------|------|
-| `deploy_via_adb.sh` | yes | USB one-click clean / bootstrap / update |
-| `clean_rb3_on_device.sh` | yes | student WiFi + `/root` wipe |
-| `deploy.sh` | yes | on-robot sync into `/usr/share/QB3rt` |
-| `units/*.conf` | yes | per-robot DOMAIN_ID, USB serials, WIFI_KEEP |
-| `bootstrap_packages.list` | yes | which overlay packages `--bootstrap` restores |
-| `overlay/` | **no** | local cache of slim `share/` + `lib/` (~0.5 GB) |
-| `qb3rt-overlay.tar.gz` | **no** | packed overlay for GitHub Releases |
-
-## Why `share/` / `lib/` are not in git
-
-A full `/usr/share` dump is ~1 GB (mostly stock QIRP ROS packages). Bootstrap
-only needs custom overlay packages (ORB-SLAM, slam_toolbox, wave_rover, …) —
-still hundreds of MB of binaries / ORBvoc, which exceeds GitHub's git file
-limits and would bloat clones.
-
-**Store them as a GitHub Release asset**, not in the git history:
-
-1. On a machine that has the dump (or after `./pack_overlay.sh` from
-   `../share` + `../lib`):
-   ```bash
-   ./pack_overlay.sh --tarball    # writes ./overlay/ + qb3rt-overlay.tar.gz
-   gh release create overlay-2026-08-03 qb3rt-overlay.tar.gz \
-     --title "QB3rt bootstrap overlay" \
-     --notes "Slim share/lib for deploy_via_adb --bootstrap"
-   ```
-2. Set the tag in `overlay_release.env` (from `overlay_release.env.example`).
-3. Anyone else: `./fetch_overlay.sh` then deploy with `--bootstrap`.
-
-Alternatives if Releases are inconvenient: university object storage / S3 /
-shared NAS — point `OVERLAY_ROOT=/mnt/...` or drop a tarball URL into a
-forked `fetch_overlay.sh`. Avoid Git LFS for this; Release assets are simpler
-and do not inflate every clone.
-
-## Class handoff (`--clean`)
+## Fresh unit (flashed with the golden image, not yet stamped)
 
 ```bash
-./deploy_via_adb.sh --unit 46927088 --clean --bootstrap
-./deploy_via_adb.sh --unit 46927088 --clean-only
+stamp/discover.sh                                  # find fresh units + IPs on the lab Wi-Fi
+# fill in units/<id>.conf: SSH host, hostname, DOMAIN_ID, USB serials, Wi-Fi
+stamp/stamp_unit.sh --unit <id> --host ubuntu@<discovered-ip> --wifi
+deploy/update_project.sh --unit <id>                # install the QB3rt project (not baked into the golden image)
+```
+
+## Routine update (project already installed)
+
+```bash
+deploy/update_project.sh --unit <id>
+# or by IP directly, no unit profile needed:
+deploy/update_project.sh --host ubuntu@<ip>
+```
+
+Syncs `launch/`, `config/`, `urdf/`, `scripts/`, `behavior_trees/`, `rviz/`,
+`docs/`, the `vendor_overrides/wave_rover_controller` bridge, and `/etc`
+system configs (CycloneDDS, sysctl, udev, env) over SSH. No reflash, no
+rebuild. Relaunch affected nodes afterward.
+
+## Class handoff
+
+```bash
+handoff/clean_unit.sh --unit <id>
 ```
 
 | action | detail |
 |--------|--------|
-| WiFi | Deletes NetworkManager profiles except `WIFI_KEEP` (unit profile). |
-| `/root` | Removes non-hidden `/var/roothome` entries (`QB3rt`, etc.). Keeps `.ssh`. |
-| History | Clears `.bash_history`; removes `.ros`. |
+| Wi-Fi | Deletes NetworkManager profiles except the unit's primary SSID |
+| `/home/ubuntu` | Removes project/state directories; keeps `.ssh` |
+| History | Clears `.bash_history`, removes `.ros` |
 
-## Routine update
+## Fleet-wide config changes
 
-```bash
-./deploy_via_adb.sh --unit 46927088
-```
-
-## After deploy (on device)
+Per-unit deploy is for *this project's* code. For config that should apply
+identically across the whole fleet (clock sync, package backfills, DDS
+tuning), use Ansible instead — see **[ansible/README.md](ansible/README.md)**:
 
 ```bash
-adb shell
-source /root/rover_env.sh
-ros2 launch QB3rt full_stack.launch.py enable_nav:=false
+cd ansible
+ansible-playbook playbooks/<name>.yml -l qb3rt_fleet   # or -l qb3rt_odd / qb3rt_even / a single host
 ```
 
 ## Per-unit profiles
 
-`units/<name>.conf`: `ADB_SERIAL`, `DOMAIN_ID`, `USB_RPLIDAR_SERIAL`,
-`USB_WAVE_ROVER_SERIAL`, `WIFI_KEEP`. Discover USB serials with
-`udevadm info -q property -n /dev/ttyUSB*`.
+`units/<id>.conf`: `SSH_HOST`, `HOSTNAME`, `DOMAIN_ID`, `STATIC_IP`,
+`USB_RPLIDAR_SERIAL`, `USB_WAVE_ROVER_SERIAL`, `WIFI_SSID`/`WIFI_PSK`,
+`WIFI_MAC`, `WIFI_RESERVE_SSID`/`WIFI_RESERVE_PSK`. Discover USB serials with
+`udevadm info -q property -n /dev/ttyUSB*`; discover the Wi-Fi MAC with
+`ip link show wlan0 | grep ether` (over SSH).
 
-## `/usr` and `rover_env.sh`
+## Prerequisites
 
-`/usr` is ostree read-only until `source /root/rover_env.sh`. The deploy script
-does this over adb before writing; interactive shells must still source it
-before `ros2 launch`.
+- Fleet SSH key: `~/.ssh/qb3rt_fleet` (public half baked into the golden
+  image's `authorized_keys`). Login is `ubuntu@<ip>`, not `root@`.
+- The ROS/DDS environment auto-loads at login via
+  `/etc/profile.d/qb3rt-ros-env.sh` — nothing to source by hand for an
+  interactive shell.
+
+## Looking for the old adb-based flow?
+
+Provisioning used to be adb-over-USB against a read-only ostree image
+(`deploy_via_adb.sh`, `fetch_overlay.sh`, `/root/QB3rt`, `rover_env.sh`).
+That flow is **deprecated** and archived under `legacy_qirp/` — see
+[`legacy_qirp/README.md`](legacy_qirp/README.md) for the old↔new command
+mapping. Do not run those scripts against a fleet unit; they target the
+Yocto image the fleet no longer runs.

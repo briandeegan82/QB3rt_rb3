@@ -1,17 +1,18 @@
 # QB3rt — teaching AGV on Qualcomm RB3 Gen 2
 
-**QB3rt** is a classroom / lab AGV stack for a fleet of skid-steer rovers. Each unit is a [WAVE ROVER](https://www.waveshare.com/) base with a **Qualcomm Robotics RB3 Gen 2** (QIRP) as the onboard computer. Students and instructors use it to explore ROS 2 perception, localization, mapping, and Nav2 navigation on real hardware.
+**QB3rt** is a classroom / lab AGV stack for a fleet of skid-steer rovers. Each unit is a [WAVE ROVER](https://www.waveshare.com/) base with a **Qualcomm Robotics RB3 Gen 2** running **Ubuntu 24.04 + ROS 2 Jazzy** as the onboard computer. Students and instructors use it to explore ROS 2 perception, localization, mapping, and Nav2 navigation on real hardware.
 
 This repository is the project source: launch files, configs, calibration, deploy tooling, and docs.
 
-> **⚠️ Migrated to Ubuntu 24.04.** The fleet has moved off the Qualcomm Linux / QIRP
-> Yocto image onto the **Canonical Ubuntu 24.04** image. Provisioning is now a
-> golden-image + SSH flow — see **[`docs/UBUNTU_MIGRATION.md`](docs/UBUNTU_MIGRATION.md)**.
-> The `reference/`, `stamp/`, `handoff/`, `deploy/`, and `capture/` directories
-> replace the old adb/overlay tooling (archived under `legacy_qirp/`). Base ROS is
-> now apt `ros-jazzy-*` + the QIRP PPAs (`qrb_ros_camera`/`qrb_ros_imu`); custom
-> packages build on-device into `/opt/qb3rt/install`. The notes below that still
-> reference `/root/QB3rt`, `qirp-setup.sh`, or adb describe the old image.
+> **Fleet runs Ubuntu 24.04, not the old Qualcomm Linux/QIRP Yocto image.**
+> Provisioning is a golden-image + SSH flow — see
+> **[`docs/UBUNTU_MIGRATION.md`](docs/UBUNTU_MIGRATION.md)**. The `reference/`,
+> `stamp/`, `handoff/`, `deploy/`, `capture/`, and `ansible/` directories are
+> the current tooling; the old adb/overlay flow is archived, deprecated, and
+> **not** part of this doc — see `legacy_qirp/README.md` if you need history.
+> Base ROS is apt `ros-jazzy-*` + the QIRP PPAs (`qrb_ros_camera`/`qrb_ros_imu`
+> — "QIRP" here names the apt package source, not the old image); custom
+> packages build on-device into `/opt/qb3rt/install`.
 
 ![QB3rt fleet — WAVE ROVER base + Qualcomm RB3 Gen 2 with RPLIDAR](images/QB3rt.jpeg)
 
@@ -39,7 +40,7 @@ RViz so students can watch the map and send goals over Wi‑Fi.
 ## Hardware (per robot)
 
 - WAVE ROVER skid-steer chassis (open-loop drive; cannot pivot in place)
-- Qualcomm RB3 Gen 2 running QIRP / ROS 2 (Jazzy-class stack)
+- Qualcomm RB3 Gen 2 running Ubuntu 24.04 + ROS 2 Jazzy
 - OV9282 tracking camera + onboard IMU → ORB-SLAM3 VIO
 - RPLIDAR C1 on USB (`/dev/rplidar`)
 - Chassis serial bridge on USB (`/dev/wave_rover`)
@@ -53,63 +54,53 @@ each unit’s CP2102N chip serials in `units/<id>.conf`.
 
 | Path | Role |
 |------|------|
-| `/root/QB3rt` | **Canonical project on the robot.** Edit here. Survives ostree reflashes (`/root` → `/var/roothome`). |
-| `/usr/share/QB3rt` | Install / runtime copy. Nodes load from here. **Do not edit by hand** — run `deploy.sh`. |
-| `vendor_overrides/` | Patches for vendor packages that have no editable source on-device (wave_rover bridge + calibration). |
+| This git clone (laptop) | **Canonical project source. Edit here**, then push with `deploy/update_project.sh --unit <id>`. |
+| `/opt/qb3rt/install/share/QB3rt` (on-device) | Install / runtime copy, synced by `deploy/update_project.sh`. Nodes load from here. **Do not edit by hand** — the next deploy overwrites it. |
+| `vendor_overrides/` | Patches for vendor packages that have no editable source on-device (wave_rover bridge + calibration); also synced by `deploy/update_project.sh`. |
 | `laptop/` | Remote-Nav2 bundle for the instructor/student laptop. |
-| `units/` | Per-robot profiles (ADB serial, `ROS_DOMAIN_ID`, USB serials, Wi‑Fi keep-list). |
-| `overlay/` | Local cache of custom ROS binaries for bootstrap (**not** in git). |
+| `units/` | Per-robot profiles (SSH host, `ROS_DOMAIN_ID`, static IP, USB serials, Wi‑Fi SSID/MAC). |
+| `ansible/`, `reference/`, `stamp/`, `deploy/`, `handoff/`, `capture/` | Fleet provisioning/config/deploy tooling — see `docs/UBUNTU_MIGRATION.md`. |
 | GitHub | Off-robot backup / class distribution of this tree. |
 
-`/usr` is an **ostree read-only** mount. Before writing under `/usr` (or before
-interactive `ros2` work), always:
-
-```bash
-source /root/rover_env.sh
-```
-
-That remounts `/usr` rw and sets up ROS / DDS. Laptop one-click deploy does this for you over adb; a shell on the device must still source it yourself.
+The on-device rootfs is a normal writable filesystem — no remount needed. The
+ROS/DDS environment (`ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`, `CYCLONEDDS_URI`)
+auto-loads at SSH login via `/etc/profile.d/qb3rt-ros-env.sh`; a non-interactive
+`ssh host "command"` should source it explicitly first, since profile.d isn't
+guaranteed to run for non-login shells.
 
 ---
 
 ## Quick start
 
-### A. Fresh robot or class handoff (from a laptop)
+### A. Fresh unit — flash + provision (from a laptop)
 
-Needs: USB adb to the RB3, this git clone, and the bootstrap overlay (downloaded once — see [SETUP.md](SETUP.md)).
-
-```bash
-cd /path/to/QB3rt
-./fetch_overlay.sh                              # once: slim share/lib from GitHub Release
-./deploy_via_adb.sh --unit 46927088 --clean --bootstrap
-```
-
-- `--clean` — wipe student Wi‑Fi passwords (except `WIFI_KEEP`) and clear
-  `/root` project state for the next class
-- `--bootstrap` — restore custom packages (ORB-SLAM, slam_toolbox, wave_rover, …)
-  into `/usr` after a reflash or wipe
-- Omit both for a routine project update: `./deploy_via_adb.sh --unit 46927088`
-
-Full details: **[SETUP.md](SETUP.md)**.
-
-### B. Edit on a robot that already has QB3rt
+Needs: this git clone on the laptop, the fleet SSH key (`~/.ssh/qb3rt_fleet`),
+and a unit flashed with the golden Ubuntu 24.04 image (or stock Ubuntu for a
+new reference unit). Full details: **[docs/UBUNTU_MIGRATION.md](docs/UBUNTU_MIGRATION.md)**.
 
 ```bash
-# on device (or via sshfs mount of /root/QB3rt)
-source /root/rover_env.sh
-# edit under /root/QB3rt …
-bash /root/QB3rt/deploy.sh    # sync → /usr/share/QB3rt + vendor overrides
-# then relaunch affected nodes
+stamp/discover.sh                            # find fresh units + IPs on the lab Wi-Fi
+stamp/stamp_unit.sh --unit <id> --host ubuntu@<discovered-ip> --wifi
+deploy/update_project.sh --unit <id>         # install the QB3rt project itself
 ```
 
-### C. Clone onto a blank `/root/QB3rt`
+For class handoff (wipe student Wi‑Fi + `/home/ubuntu` state, keep the
+provisioning profile):
 
 ```bash
-git clone https://github.com/briandeegan82/QB3rt_rb3.git /root/QB3rt
-source /root/rover_env.sh
-bash /root/QB3rt/deploy.sh
-# still need overlay packages if the image was reflashed — use SETUP.md / --bootstrap
+handoff/clean_unit.sh --unit <id>
 ```
+
+### B. Routine update (project already installed)
+
+```bash
+cd /path/to/QB3rt                # this git clone, edit here
+deploy/update_project.sh --unit <id>   # push launch/config/scripts over SSH, no reflash
+# then relaunch affected nodes on the robot
+```
+
+Fleet-wide config changes (DDS tuning, clock sync, package backfills) go
+through Ansible instead — see [`ansible/README.md`](ansible/README.md).
 
 ---
 
@@ -122,9 +113,9 @@ bash /root/QB3rt/deploy.sh
 
 Start odometry, confirm VIO is healthy, *then* start lidar SLAM so a warming-up VIO never corrupts the map:
 
-```bash
-source /root/rover_env.sh
+SSH in as `ubuntu@<unit-ip>` — the ROS/DDS env auto-loads at login. Then:
 
+```bash
 # 1) base + VIO + EKF (no SLAM, no Nav2)
 ros2 launch QB3rt odometry_bringup.launch.py
 #    • wait for /odometry/filtered
@@ -141,8 +132,6 @@ ros2 launch QB3rt slam_toolbox.launch.py
 ### One-shot (automatic `/vio/ready` gate)
 
 ```bash
-source /root/rover_env.sh
-
 # full stack onboard (SLAM + Nav2 on the robot)
 ros2 launch QB3rt full_stack.launch.py
 
@@ -187,8 +176,8 @@ Install Nav2, copy the laptop bundle, and peer CycloneDDS with the robot — see
 
 ## Operational gotchas
 
-1. **Clock** — Sync (or disable NTP after sync) *before* launching. A boot-time timesync step while the EKF is running causes wild odometry drift.
-2. **`source /root/rover_env.sh`** — Required for `/usr` writes and a correct ROS/DDS environment on device.
+1. **Clock** — Sync (or disable NTP after sync) *before* launching. A boot-time timesync step while the EKF is running causes wild odometry drift. Fleet-wide this is handled by the `https_time_sync` Ansible role (RB3 has no working RTC).
+2. **DDS discovery** — Lab APs have multicast off, so CycloneDDS needs explicit unicast peers on both the robot (`/etc/qb3rt/cyclonedds.xml`) and laptop side — see `docs/network_architecture.html`.
 3. **`ROS_DOMAIN_ID`** — Unique per robot on the same Wi‑Fi (`units/*.conf`).
 4. **VIO init** — Figure-8, then stand still until `/vio/ready` before trusting maps / Nav2.
 5. **USB serials** — After swapping lids or lids/bases, update `units/<id>.conf` and udev rules so `/dev/rplidar` and `/dev/wave_rover`
@@ -200,12 +189,16 @@ Install Nav2, copy the laptop bundle, and peer CycloneDDS with the robot — see
 
 | Doc | Contents |
 |-----|----------|
-| [SETUP.md](SETUP.md) | One-click adb deploy, bootstrap overlay, class `--clean` |
+| [SETUP.md](SETUP.md) | Quick-reference: provision a fresh unit, routine updates, class handoff |
+| [docs/UBUNTU_MIGRATION.md](docs/UBUNTU_MIGRATION.md) | Full golden-image + SSH provisioning flow (canonical) |
+| [docs/network_architecture.html](docs/network_architecture.html) | Fleet network layout, DDS/CycloneDDS unicast setup, Ansible |
+| [ansible/README.md](ansible/README.md) | Fleet-wide config roles (clock sync, package backfills) |
 | [laptop/README.md](laptop/README.md) | Remote Nav2, DDS, clock sync |
 | [docs/slam_nav2.md](docs/slam_nav2.md) | Live SLAM + Nav2 (onboard vs laptop) |
 | [docs/odometry_calibration.md](docs/odometry_calibration.md) | Wheel / bridge calibration |
 | [docs/orbslam3_calibration.md](docs/orbslam3_calibration.md) | Camera / VIO calibration |
 | [docs/system_audit_2026-07-16.md](docs/system_audit_2026-07-16.md) | Historical device audit (dated) |
+| [legacy_qirp/README.md](legacy_qirp/README.md) | Archived adb/Yocto provisioning flow — deprecated, history only |
 
 ---
 

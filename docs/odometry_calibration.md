@@ -10,18 +10,14 @@ All steps use one tool: `scripts/odom_square_test.py`, driven by
 stack (bridge + robot_state_publisher + joint_state_publisher + EKF + ORB-SLAM3
 VIO); omit it if the stack is already running.
 
-## RB3 preflight (before any file edits under `/usr/share`)
+## RB3 preflight
 
-`/usr/share` is mounted read-only by default on RB3. If you need to edit files
-there (for example deployed configs), run:
-
-```bash
-source /root/rover_env.sh
-mount | grep ' on /usr '
-```
-
-Expected: `/usr` remounted as `rw`. If you only run launch/test commands, this
-step is optional.
+SSH in as `ubuntu@<unit-ip>` — the ROS/DDS environment auto-loads at login via
+`/etc/profile.d/qb3rt-ros-env.sh`, nothing to source by hand. The rootfs is a
+normal writable filesystem (no ostree remount needed), but the installed
+package tree at `/opt/qb3rt/install/share/QB3rt` is overwritten on the next
+`deploy/update_project.sh` run — edit configs in the git clone on your laptop
+and push with that script rather than hand-editing on-device.
 
 ---
 
@@ -282,10 +278,10 @@ Recalibrate after changing floor/tires.
 Knobs: `turn_linear_speed`, `turn_target`, `angular_speed`, `direction`.
 
 > **Where the bridge lives:** the canonical `wave_rover_bridge.py` +
-> `wave_rover_bridge.yaml` are in
-> `/root/QB3rt/vendor_overrides/wave_rover_controller/` and are installed by
-> `deploy.sh`. The copies under `/usr/lib` / `/usr/share` are overwritten on
-> deploy and reverted by a reflash — never edit them directly.
+> `wave_rover_bridge.yaml` are in `vendor_overrides/wave_rover_controller/` in
+> this repo and are installed by `deploy/update_project.sh` (to
+> `/opt/qb3rt/install/{lib,share}/wave_rover_controller`). Those on-device
+> copies are overwritten on the next deploy — never edit them directly.
 
 ## 7. `mode:=vio_check` (verify the ruler)
 

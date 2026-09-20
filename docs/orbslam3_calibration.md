@@ -21,24 +21,17 @@ re-calibrate. Do the numbered steps in order **only when re-calibrating**.
 - **Not applied:** Kalibr `timeshift_cam_imu = −0.0195 s`. Stock ORB-SLAM3 has no IMU
   time-offset field; suspect it if initialization is sluggish.
 
-> **Deploy note:** edit under `/root/QB3rt`, then sync with
-> `bash /root/QB3rt/deploy.sh` (after `source /root/rover_env.sh` on device).
-> From a laptop: `./deploy_via_adb.sh --unit <id>`. Do not hand-edit
-> `/usr/share/QB3rt` — an ostree remount alone is not enough; prefer the deploy
-> scripts. An sshfs mount cannot remount `/usr` from the host.
+> **Deploy note:** edit `config/orbslam3_ov9282_imu.yaml` in the git clone on
+> your laptop, then push it over SSH:
+> `deploy/update_project.sh --unit <id>` (or `--host ubuntu@<ip>`). Do not
+> hand-edit the installed copy at `/opt/qb3rt/install/share/QB3rt` on-device —
+> it's overwritten by the next deploy.
 
-## RB3 preflight (before any file edits under `/usr/share`)
+## RB3 preflight
 
-`/usr/share` is mounted read-only by default on RB3. If your calibration workflow
-includes editing deployed files under `/usr/share`, run:
-
-```bash
-source /root/rover_env.sh
-mount | grep ' on /usr '
-```
-
-Expected: `/usr` remounted as `rw`. If you only collect bags and run tools, this
-step is optional.
+SSH in as `ubuntu@<unit-ip>` — the ROS/DDS environment auto-loads at login via
+`/etc/profile.d/qb3rt-ros-env.sh`, nothing to source by hand. The rootfs is a
+normal writable filesystem (no ostree remount needed).
 
 ---
 
