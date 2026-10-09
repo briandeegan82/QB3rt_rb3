@@ -1,0 +1,18 @@
+---
+# Runtime deps of the LLM agent stack (ir_ws), which are not in the golden
+# image. Opt-in: only units that run the agent need them.
+#   twist_mux        arbitrates cmd_vel_manual (agent) vs Nav2 -> cmd_vel.
+#                    Without it agent motion commands are silently dropped.
+#   python3-scipy    ir_skills.map_utils (frontier / clearance maths)
+#   python3-openai   LLM client
+agent_stack_deps_packages:
+  - ros-jazzy-twist-mux
+  - python3-scipy
+  - python3-openai
+
+# Offline install. If this directory on the control machine holds any .deb
+# files, they are copied over and installed from disk instead of using apt
+# repositories (for networks with no internet uplink). Must be arm64 debs
+# covering everything not already on the unit — for twist_mux that is:
+#   ros-jazzy-diagnostic-updater, ros-jazzy-twist-mux-msgs, ros-jazzy-twist-mux
+agent_stack_deps_deb_dir: "{{ role_path }}/files/debs"

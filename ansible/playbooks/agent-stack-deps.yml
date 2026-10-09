@@ -1,0 +1,13 @@
+---
+# Install the LLM agent stack's runtime deps (twist_mux, scipy, openai) on the
+# units that run it — the [qb3rt_agent] group in inventory/hosts.ini, not the
+# whole fleet:
+#   ansible-playbook playbooks/agent-stack-deps.yml
+#
+# Networks without an internet uplink: drop the arm64 debs into
+# roles/agent_stack_deps/files/debs/ first and the role installs from those.
+- name: Install agent stack dependencies
+  hosts: qb3rt_agent
+  gather_facts: false
+  roles:
+    - agent_stack_deps

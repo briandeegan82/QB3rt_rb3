@@ -1,0 +1,50 @@
+---
+- name: Find local debs for an offline install
+  ansible.builtin.set_fact:
+    agent_stack_deps_local_debs: "{{ query('ansible.builtin.fileglob', agent_stack_deps_deb_dir + '/*.deb') }}"
+
+# --- online: apt repositories -----------------------------------------------
+- name: Install agent stack packages from apt
+  ansible.builtin.apt:
+    name: "{{ agent_stack_deps_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+  when: agent_stack_deps_local_debs | length == 0
+
+# --- offline: debs pushed from the control machine --------------------------
+- name: Stage local debs on the unit
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /var/cache/qb3rt-debs/
+    mode: "0644"
+  loop: "{{ agent_stack_deps_local_debs }}"
+  become: true
+  when: agent_stack_deps_local_debs | length > 0
+
+# One apt-get call over all of them, so apt orders inter-dependencies itself
+# (twist-mux before twist-mux-msgs leaves dpkg half-configured otherwise).
+- name: Install staged debs
+  ansible.builtin.command: >-
+    apt-get install -y --no-download
+    {{ agent_stack_deps_local_debs | map('basename') | map('regex_replace', '^', '/var/cache/qb3rt-debs/') | join(' ') }}
+  become: true
+  register: agent_stack_deps_deb_install
+  changed_when: "'0 newly installed' not in agent_stack_deps_deb_install.stdout"
+  when: agent_stack_deps_local_debs | length > 0
+
+# --- verify ------------------------------------------------------------------
+- name: Check no package is left half-configured
+  ansible.builtin.command: dpkg --audit
+  changed_when: false
+  register: agent_stack_deps_audit
+  failed_when: agent_stack_deps_audit.stdout | length > 0
+
+- name: Confirm twist_mux is on the ROS 2 package path
+  ansible.builtin.command: bash -lc "ros2 pkg list | grep -x twist_mux"
+  changed_when: false
+
+- name: Confirm Python modules import
+  ansible.builtin.command: python3 -c "import scipy, openai"
+  changed_when: false

@@ -3,6 +3,7 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -80,7 +81,15 @@ def generate_launch_description():
             DeclareLaunchArgument("settings_file", default_value=default_settings),
             DeclareLaunchArgument(
                 "voc_file",
-                default_value="/usr/share/orb_slam3_ros/Vocabulary/ORBvoc.txt",
+                # orb_slam3_ros lives in the /opt/qb3rt overlay, NOT /usr/share —
+                # a wrong path makes the node segfault inside the vocab loader.
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("orb_slam3_ros"),
+                        "Vocabulary",
+                        "ORBvoc.txt",
+                    ]
+                ),
             ),
             DeclareLaunchArgument("camera_info_file", default_value=default_camera_info),
             DeclareLaunchArgument("odom_frame", default_value="odom"),
@@ -108,14 +117,27 @@ def generate_launch_description():
                         parameters=[
                             {
                                 "camera_info_path": camera_info_file,
-                                "cameraId": camera_id,
-                                "width": width,
-                                "height": height,
-                                "fps": fps,
+                                # qrb_ros_camera 2.x API: camera_id + named
+                                # streams. Publishes cam<id>_<stream> and
+                                # cam<id>_<stream>_camera_info.
+                                "camera_id": ParameterValue(camera_id, value_type=int),
+                                "stream_size": 1,
+                                "stream_name": ["stream1"],
+                                "stream1": {
+                                    "width": ParameterValue(width, value_type=int),
+                                    "height": ParameterValue(height, value_type=int),
+                                    "fps": ParameterValue(fps, value_type=int),
+                                },
                                 "use_sim_time": use_sim_time,
                             }
                         ],
-                        remappings=[("image", "image_nv12")],
+                        remappings=[
+                            (["cam", camera_id, "_stream1"], "image_nv12"),
+                            (
+                                ["cam", camera_id, "_stream1_camera_info"],
+                                "image_nv12_camera_info",
+                            ),
+                        ],
                     ),
                 ],
                 output="screen",

@@ -1,0 +1,47 @@
+---
+# Same file reference/20_fleet_config.sh bakes into the golden image — this
+# backfills units flashed before it was added.
+- name: Install NetworkManager drop-in disabling WiFi power save
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../system/99-wifi-powersave-off.conf"
+    dest: /etc/NetworkManager/conf.d/99-wifi-powersave-off.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: reload NetworkManager config
+
+# Deliberately not restarting NetworkManager: over WiFi that drops the SSH
+# session this play is running on. The drop-in applies from the next
+# (re)association; this turns power save off for the current one.
+- name: Turn power save off on the live WiFi interface(s)
+  ansible.builtin.shell: |
+    set -eu
+    command -v iw >/dev/null || exit 0
+    for dev in $(iw dev | awk '$1 == "Interface" {print $2}'); do
+        if iw dev "$dev" get power_save | grep -q ': on'; then
+            iw dev "$dev" set power_save off
+            echo "changed $dev"
+        fi
+    done
+  become: true
+  register: wifi_powersave_off_runtime
+  changed_when: "'changed' in wifi_powersave_off_runtime.stdout"
+
+- name: Apply config reload before verifying
+  ansible.builtin.meta: flush_handlers
+
+- name: Read back power save state
+  ansible.builtin.shell: iw dev | awk '$1 == "Interface" {print $2}' | xargs -rI{} iw dev {} get power_save
+  changed_when: false
+  register: wifi_powersave_off_state
+
+- name: Report result
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: {{ wifi_powersave_off_state.stdout_lines | join(', ') }}"
+
+- name: Fail if power save is still on
+  ansible.builtin.assert:
+    that: "': on' not in wifi_powersave_off_state.stdout"
+    fail_msg: "{{ inventory_hostname }}: WiFi power save is still on"
+    quiet: true

@@ -1,0 +1,23 @@
+---
+- name: reload sysctl
+  ansible.builtin.command: sysctl --system
+  become: true
+
+- name: reload udev
+  ansible.builtin.shell: udevadm control --reload-rules && udevadm trigger
+  become: true
+
+- name: enable qb3rt-sensor-watch
+  ansible.builtin.systemd:
+    name: qb3rt-sensor-watch.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+
+- name: enable qb3rt-unlock-ubuntu
+  ansible.builtin.systemd:
+    name: qb3rt-unlock-ubuntu.service
+    enabled: true
+    daemon_reload: true
+  become: true

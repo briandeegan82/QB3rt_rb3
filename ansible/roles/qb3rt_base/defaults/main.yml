@@ -1,0 +1,13 @@
+---
+# qb3rt_base — converges a running unit to the fleet-wide, identity-INDEPENDENT
+# config that reference/20_fleet_config.sh bakes into fresh golden images, plus
+# the deltas recorded in rover_provisioning.md. Safe to run repeatedly and on
+# any unit, stamped or not (it never touches hostname, domain_id values, Wi-Fi
+# profiles, or per-serial udev rules — stamp/stamp_unit.sh owns those).
+
+# Files copied verbatim from the repo's system/ dir (single source of truth —
+# update_project.sh ships the same set).
+qb3rt_base_system_dir: "{{ role_path }}/../../../system"
+
+# Seed only if absent — stamp writes the real per-unit value here.
+qb3rt_base_default_domain_id: "0"

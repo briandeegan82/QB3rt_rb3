@@ -1,0 +1,196 @@
+---
+# qb3rt_base — fleet-wide identity-independent config. Mirrors
+# reference/20_fleet_config.sh so units flashed before a given item was added
+# to the golden image still converge to it. Per-unit identity (hostname,
+# ROS_DOMAIN_ID value, USB-serial udev symlinks, Wi-Fi) is NOT touched here.
+
+# --- locale (image may ship without en_US.UTF-8; ROS + tooling warn loudly) --
+- name: Check for en_US.UTF-8 locale on the unit
+  ansible.builtin.command: locale -a
+  register: qb3rt_base_locales
+  changed_when: false
+
+- name: Generate en_US.UTF-8 locale
+  ansible.builtin.command: locale-gen en_US.UTF-8
+  become: true
+  when: "'en_us.utf8' not in (qb3rt_base_locales.stdout | lower | replace('-', ''))"
+
+- name: Set default locale
+  ansible.builtin.command: update-locale LANG=en_US.UTF-8
+  become: true
+
+# --- DDS config + domain seed ------------------------------------------------
+- name: Ensure /etc/qb3rt exists
+  ansible.builtin.file:
+    path: /etc/qb3rt
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Install CycloneDDS unicast/large-message config
+  ansible.builtin.copy:
+    src: "{{ qb3rt_base_system_dir }}/cyclonedds.xml"
+    dest: /etc/qb3rt/cyclonedds.xml
+    mode: "0644"
+  become: true
+
+- name: Seed default domain_id (only if absent — stamp owns the real value)
+  ansible.builtin.copy:
+    dest: /etc/qb3rt/domain_id
+    content: "{{ qb3rt_base_default_domain_id }}\n"
+    mode: "0644"
+    force: false
+  become: true
+
+# --- passwordless sudo for fleet automation ----------------------------------
+# Staged under a dotted name (sudo ignores those), validated, then installed.
+- name: Stage sudoers drop-in
+  ansible.builtin.copy:
+    src: "{{ qb3rt_base_system_dir }}/90-qb3rt-sudoers"
+    dest: /etc/sudoers.d/90-qb3rt.staged
+    mode: "0440"
+  become: true
+  register: qb3rt_base_sudoers_staged
+
+- name: Validate sudoers drop-in
+  ansible.builtin.command: visudo -cf /etc/sudoers.d/90-qb3rt.staged
+  become: true
+  changed_when: false
+  when: qb3rt_base_sudoers_staged.changed
+
+- name: Install validated sudoers drop-in
+  ansible.builtin.command: mv /etc/sudoers.d/90-qb3rt.staged /etc/sudoers.d/90-qb3rt
+  become: true
+  when: qb3rt_base_sudoers_staged.changed
+
+# --- unblock key-based SSH (ubuntu password expiry / cloud-init) -------------
+# Ubuntu/cloud-init ships 'ubuntu' with an expired password, which breaks
+# non-interactive SSH — i.e. stamp/deploy/Ansible itself.
+- name: Clear forced password change on ubuntu
+  ansible.builtin.command: chage -d 20000 -M -1 ubuntu
+  become: true
+
+- name: Install cloud-init drop-in stopping password re-expiry
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-qb3rt-unlock.cfg
+    content: |
+      chpasswd:
+        expire: false
+      runcmd:
+        - [ chage, -d, '20000', -M, '-1', ubuntu ]
+        - [ passwd, -u, ubuntu ]
+    mode: "0644"
+  become: true
+
+- name: Install boot-time unlock service (cloud-init re-expires on first boot)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/qb3rt-unlock-ubuntu.service
+    content: |
+      [Unit]
+      Description=QB3rt: clear forced password change on the ubuntu account
+      After=cloud-final.service
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/bin/chage -d 20000 -M -1 ubuntu
+      ExecStart=/usr/bin/passwd -u ubuntu
+      [Install]
+      WantedBy=multi-user.target
+    mode: "0644"
+  become: true
+  notify: enable qb3rt-unlock-ubuntu
+
+# --- kernel UDP buffers for DDS large messages --------------------------------
+- name: Install sysctl DDS buffer limits
+  ansible.builtin.copy:
+    src: "{{ qb3rt_base_system_dir }}/98-agv-dds.conf"
+    dest: /etc/sysctl.d/98-agv-dds.conf
+    mode: "0644"
+  become: true
+  notify: reload sysctl
+
+- name: Apply sysctl now (covers units where the file was already in place)
+  ansible.builtin.command: sysctl --system
+  become: true
+  changed_when: false
+
+# --- udev ---------------------------------------------------------------------
+- name: Install OAK-D / DepthAI udev rules
+  ansible.builtin.copy:
+    src: "{{ qb3rt_base_system_dir }}/80-movidius.rules"
+    dest: /etc/udev/rules.d/80-movidius.rules
+    mode: "0644"
+  become: true
+  notify: reload udev
+
+# ros-jazzy-rplidar-ros ships a catch-all rule giving EVERY CP2102N a
+# /dev/rplidar link — including the rover's own adapter — and it sorts after
+# the per-serial 99-agv-serial.rules stamp writes. Deleting it is safe: it is
+# a dpkg conffile, so package upgrades do not restore it.
+- name: Remove rplidar catch-all udev rule (wins over per-serial rules)
+  ansible.builtin.file:
+    path: /etc/udev/rules.d/rplidar.rules
+    state: absent
+  become: true
+  notify: reload udev
+
+# --- login-shell ROS environment ----------------------------------------------
+- name: Install /etc/profile.d/qb3rt-ros-env.sh
+  ansible.builtin.copy:
+    src: "{{ qb3rt_base_system_dir }}/qb3rt-ros-env.sh"
+    dest: /etc/profile.d/qb3rt-ros-env.sh
+    mode: "0644"
+  become: true
+
+# --- sensor_service boot race self-heal ---------------------------------------
+# If sensor_service runs its SUID discovery before the SSC remoteproc is up it
+# gets suid=0 and never creates /dev/shm/server_socket — the unit boots with a
+# permanently dead IMU (seen on qb3rt-7, 2026-10-09). The service stays
+# "active" so Restart=always can't help; a timer checks for the socket instead.
+- name: Install sensor-service socket watchdog script
+  ansible.builtin.copy:
+    src: qb3rt-sensor-socket-check.sh
+    dest: /usr/local/sbin/qb3rt-sensor-socket-check
+    mode: "0755"
+  become: true
+
+- name: Install sensor-service socket watchdog units
+  ansible.builtin.copy:
+    dest: "{{ item.dest }}"
+    content: "{{ item.content }}"
+    mode: "0644"
+  become: true
+  notify: enable qb3rt-sensor-watch
+  loop:
+    - dest: /etc/systemd/system/qb3rt-sensor-watch.service
+      content: |
+        [Unit]
+        Description=QB3rt: restart sensor_service if its client socket is missing
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/sbin/qb3rt-sensor-socket-check
+    - dest: /etc/systemd/system/qb3rt-sensor-watch.timer
+      content: |
+        [Unit]
+        Description=QB3rt sensor_service socket watchdog
+        [Timer]
+        OnBootSec=90
+        OnUnitActiveSec=60
+        [Install]
+        WantedBy=timers.target
+
+# --- ament registration sanity -------------------------------------------------
+# `ros2 launch QB3rt ...` needs the ament index marker under the install prefix.
+# update_project.sh creates it on deploy; this flags units where the project
+# has never been deployed rather than silently leaving a broken bringup.
+- name: Check QB3rt ament registration
+  ansible.builtin.stat:
+    path: /opt/qb3rt/install/share/ament_index/resource_index/packages/QB3rt
+  register: qb3rt_base_ament_marker
+
+- name: Warn if the QB3rt project is not deployed/registered
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: /opt/qb3rt/install has no QB3rt ament marker —
+      `ros2 launch QB3rt ...` will fail until deploy/update_project.sh runs.
+  when: not qb3rt_base_ament_marker.stat.exists

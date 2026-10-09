@@ -1,0 +1,39 @@
+---
+# Base config for every QB3rt unit — the single "make this unit fleet-correct"
+# playbook. Converges a running unit (any image vintage) to the same state a
+# fresh stamp from the current golden image would have, WITHOUT touching
+# per-unit identity (hostname, ROS_DOMAIN_ID, USB-serial rules, Wi-Fi profiles
+# — those stay with stamp/stamp_unit.sh).
+#
+# Covers, in order:
+#   qb3rt_base          /etc/qb3rt (cyclonedds), sudoers, sysctl, udev,
+#                       profile.d ROS env, locale, ubuntu-account unlock,
+#                       rplidar catch-all rule removal, ament sanity check
+#   wifi_powersave_off  35% loss / multi-second RTT if left on
+#   https_time_sync     RB3 has no RTC; a mid-run NTP step breaks the EKF
+#   ros2_demo_nodes     talker/listener lab deps + rmw-cyclonedds-cpp backfill
+#   agent_stack_deps    (second play, [qb3rt_agent] only) twist_mux et al.
+#
+# Whole fleet (only reaches whichever of ROS_NET_ODD/EVEN this laptop is
+# currently joined to — see inventory/hosts.ini):
+#   ansible-playbook playbooks/base-config.yml
+#
+# One network half or one unit to control blast radius:
+#   ansible-playbook playbooks/base-config.yml -l qb3rt_odd
+#   ansible-playbook playbooks/base-config.yml -l qb3rt-7
+- name: Base fleet config
+  hosts: qb3rt_fleet
+  gather_facts: false
+  roles:
+    - qb3rt_base
+    - wifi_powersave_off
+    - https_time_sync
+    - ros2_demo_nodes
+
+# Agent-stack deps are deliberately a separate play so they stay opt-in via
+# the [qb3rt_agent] group rather than becoming fleet-wide by accident.
+- name: Agent stack dependencies (opt-in group)
+  hosts: qb3rt_agent
+  gather_facts: false
+  roles:
+    - agent_stack_deps

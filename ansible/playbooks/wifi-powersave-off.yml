@@ -1,0 +1,16 @@
+---
+# Disable WiFi power save fleet-wide (persistent NetworkManager default plus the
+# live interface). With it on, a strong link measured 35% loss and multi-second
+# RTT, which reads as a broken network or overloaded board, not a radio setting.
+#
+#   ansible-playbook playbooks/wifi-powersave-off.yml
+#   ansible-playbook playbooks/wifi-powersave-off.yml -l qb3rt_odd
+#   ansible-playbook playbooks/wifi-powersave-off.yml -l qb3rt-7
+#
+# The laptop end needs the same fix (it is half of the measured loss) — see
+# laptop/README.md.
+- name: Disable WiFi power save
+  hosts: qb3rt_fleet
+  gather_facts: false
+  roles:
+    - wifi_powersave_off
