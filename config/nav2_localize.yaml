@@ -1,0 +1,84 @@
+# Nav2 LOCALIZATION mode params for the QB3rt skid-steer AGV — Monte Carlo
+# localization (AMCL) + map_server against a saved map.
+#
+# Pairs with launch/localization.launch.py: localization_launch.py consumes
+# this file (map_server + amcl + lifecycle_manager_localization), while
+# navigation_launch.py consumes config/nav2.yaml unchanged — the nav stack
+# doesn't care whether map->odom comes from slam_toolbox or AMCL.
+#
+# Frames (REP-105): AMCL owns map->odom, the EKF owns odom->base_footprint,
+# URDF owns base_footprint->laser_frame. A saved map's frame must be "map" —
+# slam_toolbox saves produce that by default.
+#
+# Student workflow:
+#   1) map:   slam_toolbox mode, then
+#             ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap \
+#               "{name: {data: '/home/ubuntu/maps/lab'}}"
+#             (or: ros2 run nav2_map_server map_saver_cli -f ~/maps/lab -t /map)
+#   2) local: ros2 launch QB3rt localization.launch.py map:=/home/ubuntu/maps/lab.yaml
+#   3) seed:  RViz "2D Pose Estimate" -> /initialpose; AMCL converges as the
+#             robot drives.
+
+map_server:
+  ros__parameters:
+    # yaml_filename comes from the launch `map` arg; keep the rest explicit.
+    use_sim_time: false
+    topic_name: "map"
+    frame_id: "map"
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+
+    # Frames — match the EKF/URDF chain above.
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    global_frame_id: "map"
+    scan_topic: "scan"
+    tf_broadcast: true          # AMCL publishes map->odom
+    transform_tolerance: 0.5    # generously slow sensor/TF pipeline on WiFi
+    set_initial_pose: true      # honour /initialpose from RViz
+    always_reset_initial_pose: true
+
+    # Motion model: diff-corrected is the right family for a skid-steer that
+    # cannot pivot — rotation only ever happens bundled with translation.
+    # alpha* inflated vs a castor robot: skid scrub adds noise the odometry
+    # doesn't report; keep them loose and let the laser correct.
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    alpha1: 0.35   # rot noise from rotation
+    alpha2: 0.35   # rot noise from translation
+    alpha3: 0.30   # trans noise from translation
+    alpha4: 0.30   # trans noise from rotation
+    alpha5: 0.15   # (omni only; unused but harmless)
+
+    # Update gating — don't burn particles when parked; the C1's 10 Hz scan
+    # makes cheap updates free anyway.
+    update_min_d: 0.10
+    update_min_a: 0.2
+    resample_interval: 2
+    min_particles: 300
+    max_particles: 2000
+    recovery_alpha_slow: 0.0    # random injection off unless kidnapped
+    recovery_alpha_fast: 0.0
+
+    # Likelihood-field model tuned for RPLIDAR C1 (360 deg, ~5 kHz, 16 m).
+    laser_model_type: "likelihood_field"
+    laser_likelihood_max_dist: 2.0
+    max_beams: 90               # 10 Hz scans; ~4 deg thinning is plenty for a 5 cm map
+    z_hit: 0.85
+    z_short: 0.05
+    z_max: 0.05
+    z_rand: 0.05
+    sigma_hit: 0.1
+    lambda_short: 0.1
+    laser_min_range: 0.15       # C1 spec floor; ignore self returns
+    laser_max_range: 14.0       # C1 max is 16 m; 14 keeps junk returns out of the model
+
+lifecycle_manager_localization:
+  ros__parameters:
+    use_sim_time: false
+    autostart: true
+    node_names: ["map_server", "amcl"]
+    bond_timeout: 4.0
+    attempt_respawn_reconnection: true
+    bond_respawn_max_duration: 10.0
