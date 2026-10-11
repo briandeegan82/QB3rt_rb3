@@ -21,3 +21,9 @@
     enabled: true
     daemon_reload: true
   become: true
+
+- name: restart cdsprpcd
+  ansible.builtin.systemd:
+    name: cdsprpcd.service
+    state: restarted
+  become: true

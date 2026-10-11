@@ -1,0 +1,3 @@
+# QAIRT 2.49 arm64 .deb files — fetched from the ubuntu-qcom-iot qcom-ppa
+# (resolute suite) by fetch-qairt-debs.sh. Not committed (~210 MB).
+*.deb

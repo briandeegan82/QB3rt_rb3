@@ -179,6 +179,66 @@
         [Install]
         WantedBy=timers.target
 
+# --- QAIRT 2.49 runtime upgrade ------------------------------------------------
+# Stock noble apt ships qairt 2.46, whose V68 DSP skel cannot create MatMul ops
+# and which rejects every context binary AI Hub can produce (they only offer
+# 2.45/2.49/2.50 toolchains; blobs built newer than the runtime are refused).
+# The qcom-ppa resolute suite carries 2.49 debs whose runtime deps are already
+# satisfied functionally by the image's qcom-fastrpc1 (1.0.15) + running
+# fastrpc/dsp daemons, so install with --force-depends rather than pulling the
+# resolute libfastrpc1/hexagon-dsp-binaries stack over the working one.
+# Debs live in files/qairt/ (gitignored); fetch them with fetch-qairt-debs.sh.
+- name: Stage QAIRT 2.49 debs on the unit
+  ansible.builtin.copy:
+    src: "qairt/{{ item }}"
+    dest: "/tmp/qairt249/{{ item }}"
+    mode: "0644"
+  become: true
+  loop:
+    - "qairt-dsp-binaries_2.49.0-0ubuntu2_arm64.deb"
+    - "qairt-libs_2.49.0-0ubuntu2_arm64.deb"
+    - "qairt-tools_2.49.0-0ubuntu2_arm64.deb"
+    - "libqnn1_2.49.0-0ubuntu2_arm64.deb"
+  register: qb3rt_base_qairt_debs
+
+- name: Check installed qairt-libs version
+  ansible.builtin.command: dpkg-query -W -f=${Version} qairt-libs
+  register: qb3rt_base_qairt_version
+  changed_when: false
+  failed_when: false
+
+- name: Install QAIRT 2.49 (deps covered by qcom-fastrpc1)
+  ansible.builtin.command: >-
+    dpkg --force-depends -i
+    /tmp/qairt249/qairt-dsp-binaries_2.49.0-0ubuntu2_arm64.deb
+    /tmp/qairt249/qairt-libs_2.49.0-0ubuntu2_arm64.deb
+    /tmp/qairt249/qairt-tools_2.49.0-0ubuntu2_arm64.deb
+    /tmp/qairt249/libqnn1_2.49.0-0ubuntu2_arm64.deb
+  become: true
+  when: >
+    qb3rt_base_qairt_version.rc != 0
+    or qb3rt_base_qairt_version.stdout is version('2.49', '<')
+
+# 2.49 qairt-dsp-binaries installs skels under /usr/share/hexagon-dsp/, but the
+# golden image left unmanaged copies under /usr/share/qcom/ that
+# /usr/lib/dsp/cdsp/*.so symlinks point at — without repointing, the host libs
+# are 2.49 while the DSP still loads the old skels (Device Creation failure).
+- name: Repoint QNN DSP skel symlinks to the 2.49 copies
+  ansible.builtin.file:
+    src: "/usr/share/hexagon-dsp/qcm6490/Thundercomm/RB3gen2/dsp/cdsp/{{ item }}"
+    dest: "/usr/lib/dsp/cdsp/{{ item }}"
+    state: link
+    force: true
+  become: true
+  loop:
+    - libQnnHtpV68.so
+    - libQnnHtpV68Skel.so
+    - libQnnHtpV68QemuDriver.so
+    - libQnnHtpNetRunExtensions.so
+    - libQnnSystem.so
+    - libQnnSaver.so
+  notify: restart cdsprpcd
+
 # --- ament registration sanity -------------------------------------------------
 # `ros2 launch QB3rt ...` needs the ament index marker under the install prefix.
 # update_project.sh creates it on deploy; this flags units where the project

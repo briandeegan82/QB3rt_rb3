@@ -1,0 +1,9 @@
+# Lab/task vocabulary baked into yoloe_lab.bin at export time
+# (--prompt-text "door, hallway sign, trash bin, fire extinguisher, person").
+# Re-export the model to change classes — this file must match the prompt order.
+names:
+  0: door
+  1: hallway sign
+  2: trash bin
+  3: fire extinguisher
+  4: person
