@@ -26,10 +26,10 @@ def generate_launch_description():
     and lacks MatMul in the V68 skel — see ansible qairt-2.49 deployment).
 
       ros2 launch QB3rt yolo_npu.launch.py \\
-          model:=/home/ubuntu/models/yoloe_coco80.bin \\
+          model:=/home/ubuntu/models/yoloe_coco80_qa249.bin \\
           label_file:=.../config/yoloe_coco80.yaml
 
-    For the lab-vocab model use yoloe_lab.bin + yoloe_lab.yaml. The vocabulary
+    For the lab-vocab model use yoloe_lab_qa249.bin + yoloe_lab.yaml. The vocabulary
     is baked into the .bin at export time (--prompt-text); label_file must list
     the same classes in the same order.
     """
@@ -156,7 +156,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "model",
-                default_value="/home/ubuntu/models/yoloe_coco80.bin",
+                default_value="/home/ubuntu/models/yoloe_coco80_qa249.bin",
                 description="AI Hub yoloe_seg qnn_context_binary (.bin) path",
             ),
             DeclareLaunchArgument(
