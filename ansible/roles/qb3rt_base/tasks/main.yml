@@ -239,6 +239,20 @@
     - libQnnSaver.so
   notify: restart cdsprpcd
 
+# --- per-unit hardware convention probe ---------------------------------------
+# Installed but NOT run by base-config — it drives the wheels and needs an
+# operator placing a calibration obstacle. Run interactively per unit:
+#   ansible-playbook playbooks/convention-probe.yml -l qb3rt-N
+# It writes /etc/qb3rt/unit_conventions.yaml, which the bridge (drive_inverted)
+# and static_transforms.launch.py (lidar_yaw) read at every startup — so the
+# measured baseline survives project redeploys and reflashes stay correct.
+- name: Install convention probe script
+  ansible.builtin.copy:
+    src: qb3rt-convention-probe.py
+    dest: /usr/local/sbin/qb3rt-convention-probe
+    mode: "0755"
+  become: true
+
 # --- ament registration sanity -------------------------------------------------
 # `ros2 launch QB3rt ...` needs the ament index marker under the install prefix.
 # update_project.sh creates it on deploy; this flags units where the project

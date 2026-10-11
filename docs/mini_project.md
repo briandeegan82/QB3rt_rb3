@@ -36,11 +36,12 @@ Each unit is provisioned by Ansible with:
   postprocess → `/yoloe/detections`) with a COCO-80 model
 - ORB-SLAM3 mono-inertial build on the OV9282 tracking camera
 
-**Deliberately not provided:** a correct per-unit configuration, tuned
-navigation, detection→goal conversion, or any integration code. Two units
-can differ in drivetrain polarity and lidar mounting orientation — assuming
-the reference config fits your robot is a bug, and discovering that is part
-of the exercise.
+**Deliberately not provided:** tuned navigation, detection→goal conversion,
+or any integration code. Per-unit drivetrain/lidar conventions
+(`drive_inverted`, `lidar_yaw`) *are* provisioned correctly at hand-out —
+`/etc/qb3rt/unit_conventions.yaml` records them, and Stage 0 asks you to
+verify rather than trust it, because a wrong convention silently inverts
+your map.
 
 ## 3. Safety rules (mandatory — violations void the demo)
 
@@ -62,10 +63,13 @@ marks incrementally even if the capstone isn't reached.
 
 ### Stage 0 — Bring-up & conventions
 Connect (SSH, domain, DDS), list nodes/topics, verify `/odom`, `/imu/data`,
-`/scan` rates. **Probe your unit's conventions:** command +0.15 m/s `linear.x`
-— which way does it roll? Command +0.5 rad/s `angular.z` — which way does it
-turn vs. REP-103 (CCW viewed from above)? Record findings; set
-`drive_inverted`/`lidar_yaw` accordingly and justify.
+`/scan` rates. **Verify your unit's conventions:** `/etc/qb3rt/unit_conventions.yaml`
+records the provisioning-measured `drive_inverted`/`lidar_yaw` — check it
+against reality. Command +0.15 m/s `linear.x` — which way does it roll?
+Command +0.5 rad/s `angular.z` — which way does it turn vs. REP-103 (CCW
+viewed from above)? Put an obstacle at the nose and confirm it lands in the
+*front* scan sector (bearing ~0° in `base_footprint`, not ~180°). Report any
+disagreement — it changes your baselines.
 
 *Exit check:* one-sentence per-convention report + live `cmd_vel` demo where
 each motion matches the command's intent.

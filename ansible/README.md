@@ -35,6 +35,34 @@ buffers, OAK-D udev rules, `/etc/profile.d/qb3rt-ros-env.sh`, removal of the
 the rover adapter — and sorts after the per-serial rules stamp writes), and a
 warning when `/opt/qb3rt/install` lacks the `QB3rt` ament marker.
 
+### Per-unit hardware convention probe
+
+`qb3rt_base` also installs **`qb3rt-convention-probe`** (`/usr/local/sbin/`),
+but never runs it — it drives the wheels. Run it once per unit after
+base-config, interactively:
+
+```bash
+ansible-playbook playbooks/convention-probe.yml -l qb3rt-7
+```
+
+The playbook pauses for you to floor the robot and place a calibration
+object at its nose, starts the base stack + lidar if needed, then runs the
+probe. It measures:
+
+- **`drive_inverted`** — pulses `+linear.x` and integrates IMU accel; a
+  negative delta-v means the drivetrain's "forward" is the physical rear
+  (the qb3rt-7 signature: L/R swapped + polarity-reversed).
+- **yaw convention** — `+angular.z` vs. gyro sign; a *negative* result can't
+  be auto-fixed and flags the unit for manual wiring inspection.
+- **`lidar_yaw`** — locates the nose-placed obstacle in the raw scan; its
+  angle reveals which way scan-zero physically points.
+
+Results land in **`/etc/qb3rt/unit_conventions.yaml`**, which
+`wave_rover_bridge.py` (`drive_inverted`) and `static_transforms.launch.py`
+(`lidar_yaw` default) read at every startup — so the measured baseline
+survives `update_project.sh` redeploys. A copy is fetched back to
+`ansible/convention-results/<host>.yaml` for the record.
+
 ### `https_time_sync`
 
 Deploys the HTTPS Date-header clock sync hack described in

@@ -1,3 +1,6 @@
+import os
+
+import yaml
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -5,6 +8,19 @@ from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitut
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+
+# Per-unit convention file written by qb3rt-convention-probe at provisioning.
+_UNIT_CONV = "/etc/qb3rt/unit_conventions.yaml"
+_DEFAULT_LIDAR_YAW = "3.141592653589793"
+
+
+def _unit_lidar_yaw():
+    try:
+        with open(_UNIT_CONV) as f:
+            v = (yaml.safe_load(f) or {}).get("lidar_yaw")
+        return str(v) if v is not None else _DEFAULT_LIDAR_YAW
+    except Exception:
+        return _DEFAULT_LIDAR_YAW
 
 
 def generate_launch_description():
@@ -26,8 +42,9 @@ def generate_launch_description():
             DeclareLaunchArgument("namespace", default_value=""),
             # Yaw from base_link +X to the lidar scan-zero. pi = zero faces the
             # chassis rear (verified on qb3rt-7); 0 = zero faces the physical
-            # front. See QB3rt.urdf.xacro laser_joint comment.
-            DeclareLaunchArgument("lidar_yaw", default_value="3.141592653589793"),
+            # front. Default comes from /etc/qb3rt/unit_conventions.yaml when
+            # provisioned (per-unit), else pi. See QB3rt.urdf.xacro laser_joint.
+            DeclareLaunchArgument("lidar_yaw", default_value=_unit_lidar_yaw()),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("log_level", default_value="info"),
             # joint_state_publisher animates the continuous wheel joints. The

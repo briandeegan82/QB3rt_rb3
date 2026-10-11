@@ -1,0 +1,72 @@
+---
+# convention-probe — measure one unit's hardware conventions and stamp the
+# baseline into /etc/qb3rt/unit_conventions.yaml.
+#
+# INTERACTIVE: the probe pulses the wheels (keep the floor clear) and pauses
+# for you to place a tall object at the robot's nose before the lidar check.
+# Run per unit, or a few at a time if you can watch each one:
+#
+#   ansible-playbook playbooks/convention-probe.yml -l qb3rt-7
+#
+# Results are also fetched back into ./convention-results/<host>.yaml so the
+# inventory has a recorded baseline per unit.
+- name: Per-unit hardware convention probe
+  hosts: qb3rt_fleet
+  gather_facts: false
+  serial: 1          # one robot at a time — it moves and needs watching
+  tasks:
+    - name: Operator notice — robot will drive ~0.2 m and spin twice
+      ansible.builtin.pause:
+        prompt: >-
+          Put {{ inventory_hostname }} on the floor with ~1 m clear in every
+          direction. You will also need a tall object (box/tripod) to place at
+          its nose mid-probe. Press ENTER to begin.
+
+    - name: Ensure base stack is running (bridge + IMU)
+      ansible.builtin.shell: |
+        source /etc/profile
+        pgrep -f waverover_bridge >/dev/null && exit 0
+        nohup ros2 launch QB3rt odometry.launch.py enable_base_driver:=true \
+          > /tmp/probe_stack.log 2>&1 &
+        sleep 15
+        pgrep -f waverover_bridge >/dev/null
+      become: false
+
+    - name: Ensure RPLIDAR is publishing /scan
+      ansible.builtin.shell: |
+        source /etc/profile
+        timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average && exit 0
+        nohup ros2 launch QB3rt rplidar_c1.launch.py > /tmp/probe_lidar.log 2>&1 &
+        sleep 8
+        timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average
+      become: false
+
+    - name: Place calibration object at the nose
+      ansible.builtin.pause:
+        prompt: >-
+          Now place a tall object ~0.5 m in front of {{ inventory_hostname }}'s
+          NOSE (the camera-facing end). Press ENTER when placed.
+
+    - name: Run the convention probe (drives wheels, reads IMU + scan)
+      ansible.builtin.command: qb3rt-convention-probe
+      become: true
+      register: probe_out
+      failed_when: false
+      changed_when: true
+
+    - name: Show probe output
+      ansible.builtin.debug: var=probe_out.stdout_lines
+
+    - name: Stop any residual stack motion
+      ansible.builtin.command: >-
+        sh -c 'source /etc/profile &&
+               ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{}" --once'
+      failed_when: false
+      changed_when: false
+
+    - name: Fetch measured conventions back to the control host
+      ansible.builtin.fetch:
+        src: /etc/qb3rt/unit_conventions.yaml
+        dest: "{{ playbook_dir }}/../convention-results/{{ inventory_hostname }}.yaml"
+        flat: true
+      failed_when: false

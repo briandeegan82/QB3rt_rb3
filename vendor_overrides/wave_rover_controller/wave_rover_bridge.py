@@ -77,6 +77,7 @@ reflash.
 """
 
 import math
+import os
 
 import rclpy
 from rclpy.node import Node
@@ -294,6 +295,23 @@ class CmdVelBridge(Node):
         self._base_frame = self.get_parameter('base_frame').value
         self._publish_tf = self.get_parameter('publish_tf').value
         self._drive_inverted = self.get_parameter('drive_inverted').value
+        # Per-unit override written by qb3rt-convention-probe at provisioning
+        # (/etc/qb3rt/unit_conventions.yaml). Beats the yaml default so each
+        # chassis keeps its measured polarity across redeploys.
+        conv = '/etc/qb3rt/unit_conventions.yaml'
+        if os.path.exists(conv):
+            try:
+                import yaml
+                data = yaml.safe_load(open(conv)) or {}
+                if 'drive_inverted' in data:
+                    v = bool(data['drive_inverted'])
+                    if v != self._drive_inverted:
+                        self.get_logger().warn(
+                            f'drive_inverted overridden by {conv}: '
+                            f'{self._drive_inverted} -> {v}')
+                    self._drive_inverted = v
+            except Exception as e:
+                self.get_logger().error(f'failed to parse {conv}: {e}')
 
         self._joy_left_axis   = self.get_parameter('joy_left_axis').value
         self._joy_left_scale  = self.get_parameter('joy_left_scale').value
