@@ -268,6 +268,14 @@ class CmdVelBridge(Node):
         # this gives base_link two parents and detaches Nav2 from the sensors.
         self.declare_parameter('publish_tf', False)
 
+        # True when the rover's drivetrain drives toward the physical REAR for
+        # positive motor commands.  On qb3rt-7 a +x command rolled backward
+        # while +z yawed CCW (verified by gyro) — i.e. the wiring behaves as
+        # L/R-swapped AND polarity-reversed.  Sending (-v_r, -v_l) restores
+        # REP-103 motion without touching the (correct) yaw response.  Odom is
+        # computed from the pre-inversion wheel speeds, so it stays correct.
+        self.declare_parameter('drive_inverted', False)
+
         # Tank-drive joystick.
         # Axis indices into sensor_msgs/Joy.axes[].  The scale flips sign:
         # most controllers report stick-up as -1, so scale = -1.0 gives
@@ -285,6 +293,7 @@ class CmdVelBridge(Node):
         self._odom_frame = self.get_parameter('odom_frame').value
         self._base_frame = self.get_parameter('base_frame').value
         self._publish_tf = self.get_parameter('publish_tf').value
+        self._drive_inverted = self.get_parameter('drive_inverted').value
 
         self._joy_left_axis   = self.get_parameter('joy_left_axis').value
         self._joy_left_scale  = self.get_parameter('joy_left_scale').value
@@ -412,6 +421,8 @@ class CmdVelBridge(Node):
         trim = self._trim_at((v_l + v_r) / 2.0)
         left = self._feedforward(v_l * (1.0 - trim))
         right = self._feedforward(v_r * (1.0 + trim))
+        if self._drive_inverted:
+            left, right = -right, -left
         self._send(left, right)
 
     # ── cmd_vel (Nav2 / teleop_twist_joy) ────────────────────────────────────
