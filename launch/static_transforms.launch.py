@@ -16,11 +16,18 @@ def generate_launch_description():
     urdf_path = PathJoinSubstitution(
         [FindPackageShare("QB3rt"), "urdf", "QB3rt.urdf.xacro"]
     )
-    robot_description = ParameterValue(Command(["xacro ", urdf_path]), value_type=str)
+    lidar_yaw = LaunchConfiguration("lidar_yaw")
+    robot_description = ParameterValue(
+        Command(["xacro ", urdf_path, " lidar_yaw:=", lidar_yaw]), value_type=str
+    )
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("namespace", default_value=""),
+            # Yaw from base_link +X to the lidar scan-zero. pi = zero faces the
+            # chassis rear (verified on qb3rt-7); 0 = zero faces the physical
+            # front. See QB3rt.urdf.xacro laser_joint comment.
+            DeclareLaunchArgument("lidar_yaw", default_value="3.141592653589793"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("log_level", default_value="info"),
             # joint_state_publisher animates the continuous wheel joints. The

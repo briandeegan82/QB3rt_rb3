@@ -60,14 +60,28 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.20
-      # Loose: the robot can't pivot to fine-tune final heading, so don't demand it.
-      yaw_goal_tolerance: 0.40
+      # Relaxed 2026-07-19: open-loop dead-reckoning odom drifts vs AMCL, and
+      # skid-steer final-approach oscillation was observed (fwd/back hunting).
+      xy_goal_tolerance: 0.30
+      # Loose: don't demand precise final heading - pivot accuracy varies with
+      # surface grip (spins freely on vinyl, barely turns on carpet).
+      yaw_goal_tolerance: 0.60
 
-    # Regulated Pure Pursuit: pure path following, no in-place rotation. Ideal for a
-    # skid-steer that can only turn along arcs.
+    # RotationShimController wraps RPP (Jazzy: replaces use_rotate_to_heading):
+    # pivots in place to face the path before driving, and rotates to the goal
+    # heading at the end - the skid-steer's "3-point turn" behaviour.
+    # SURFACE-DEPENDENT: in-place spin works on vinyl/hard floors (measured
+    # ~1.5 rad/s actual) but NOT on carpet (~0.2 rad/s, 2026-07-19). On carpet
+    # revert to plain RPP with the shim removed.
     FollowPath:
-      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      angular_dist_threshold: 0.785
+      forward_sampling_distance: 0.5
+      rotate_to_heading_angular_vel: 1.2
+      max_angular_accel: 3.2
+      rotate_to_goal_heading: true
+      simulate_ahead_time: 1.0
       desired_linear_vel: 0.22
       # Longer lookahead -> gentler commanded curvature (bigger arc radius) so RPP
       # stays within the skid-steer's measured ~0.8 m min turn radius (carpet,
@@ -95,8 +109,6 @@ controller_server:
       # 2026-07-14 "no valid path found" failure this caused on the Smac side.
       regulated_linear_scaling_min_radius: 0.5
       regulated_linear_scaling_min_speed: 0.10
-      # No pivoting: never rotate in place to the path/goal heading.
-      use_rotate_to_heading: false
       # true (was false, changed 2026-07-14 to match laptop/nav2_laptop.yaml's
       # DUBIN->REEDS_SHEPP switch): NavfnPlanner is kinematics-agnostic so it
       # doesn't itself avoid reversing, but RPP can still choose a short
@@ -258,8 +270,10 @@ velocity_smoother:
     scale_velocities: False
     feedback: "OPEN_LOOP"
     # Cap to safe indoor speeds (calibrated max is ~0.42 m/s). No lateral motion.
-    max_velocity: [0.26, 0.0, 1.2]
-    min_velocity: [-0.26, 0.0, -1.2]
+    # Angular cap raised 1.2->1.5 (2026-07-19): measured ~1.5 rad/s actual spin
+    # rate on vinyl; the RotationShimController needs yaw authority for pivots.
+    max_velocity: [0.26, 0.0, 1.5]
+    min_velocity: [-0.26, 0.0, -1.5]
     max_accel: [2.5, 0.0, 3.2]
     max_decel: [-2.5, 0.0, -3.2]
     odom_topic: "/odometry/filtered"

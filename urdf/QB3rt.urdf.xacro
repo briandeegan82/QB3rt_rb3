@@ -1,5 +1,11 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="teaching_QB3rt">
+  <!-- lidar_yaw: yaw from base_link +X to the lidar scan-zero. pi = scan-zero
+       faces the chassis REAR, so the +pi joint maps physical-front obstacles
+       to base +X. Verified on qb3rt-7 2026-07-19: a door touching the nose
+       read at raw scan ~180 deg -> zero faces rear -> lidar_yaw must be pi.
+       See the laser_joint comment for the full story. -->
+  <xacro:arg name="lidar_yaw" default="3.141592653589793"/>
   <!-- Dimensions are based on the provided drawing (mm -> m), with simple approximations. -->
   <xacro:property name="chassis_length" value="0.180"/>
   <xacro:property name="chassis_width" value="0.165"/>
@@ -112,18 +118,15 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_frame"/>
-    <!-- RPLIDAR C1 is physically mounted with its zero-angle reference facing
-         the chassis REAR, not the front as originally assumed here. Confirmed
-         2026-07-13: with Fixed Frame=base_link, an obstacle at the robot's
-         physical front showed up BEHIND the model in the LaserScan display -
-         i.e. scan angle 0 pointed backward. Without this 180 deg yaw, every
-         scan was projected into base_link mirrored front-to-back, so
-         slam_toolbox built a map whose content (walls) was correct in shape
-         but rotated 180 deg from true room layout relative to the
-         (correctly-tracked, wheel+gyro) robot pose - the "forward drives
-         backward on the map" symptom. Wheel odometry / EKF heading were
-         independently verified correct (rotation-sense test) before landing
-         on this fix, so no other code changes were needed. -->
-    <origin xyz="0.0 0.0 0.170" rpy="0 0 ${pi}"/>
+    <!-- RPLIDAR C1 yaw offset from base_link +X to the lidar scan-zero.
+         pi = zero faces the chassis REAR (verified on the reference robot
+         2026-07-13 and on qb3rt-7 2026-07-19: a door at the physical nose
+         reads at raw scan angle ~180 deg, so +pi maps it to base +X).
+         If a unit's lidar is mounted with zero facing FRONT, pass
+         lidar_yaw:=0. NOTE (qb3rt-7, 2026-07-19): this unit ALSO needed
+         drive_inverted:=true in wave_rover_bridge.yaml (+x rolled toward the
+         physical rear) - the drive and scan conventions are independent
+         hardware quirks, verify both on each unit before fleet rollout. -->
+    <origin xyz="0.0 0.0 0.170" rpy="0 0 $(arg lidar_yaw)"/>
   </joint>
 </robot>

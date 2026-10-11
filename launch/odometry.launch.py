@@ -24,6 +24,7 @@ def generate_launch_description():
     namespace = LaunchConfiguration("namespace")
     use_sim_time = LaunchConfiguration("use_sim_time")
     bringup_base = LaunchConfiguration("bringup_base")
+    enable_base_driver = LaunchConfiguration("enable_base_driver")
     ekf_config = LaunchConfiguration("ekf_config")
 
     return LaunchDescription(
@@ -33,6 +34,11 @@ def generate_launch_description():
             # Bring up the robot foundation too. Set false when a parent launch
             # (e.g. full_stack) already starts base.
             DeclareLaunchArgument("bringup_base", default_value="true"),
+            # Start the calibrated WAVE-ROVER driver (cmd_vel->motors, /odom)
+            # with base. Needed whenever this launch is used standalone for
+            # driveable bring-up (mapping, teleop); leave false when the driver
+            # is started elsewhere.
+            DeclareLaunchArgument("enable_base_driver", default_value="false"),
             DeclareLaunchArgument(
                 "ekf_config",
                 default_value=PathJoinSubstitution(
@@ -47,6 +53,7 @@ def generate_launch_description():
                 launch_arguments={
                     "namespace": namespace,
                     "use_sim_time": use_sim_time,
+                    "enable_base_driver": enable_base_driver,
                 }.items(),
             ),
             Node(
