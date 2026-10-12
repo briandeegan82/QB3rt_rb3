@@ -148,13 +148,21 @@ def main():
         ok = False
     else:
         dv, mean_early = r
-        print(f"  integrated dv = {dv:+.3f} m/s, early mean accel = {mean_early:+.2f} m/s^2")
-        if abs(dv) < 0.03 and abs(mean_early) < 0.3:
-            print("  response too weak to classify (blocked wheels? carpet?) — "
-                  "set drive_inverted manually")
+        print(f"  integrated dv = {dv:+.3f} m/s, launch mean accel = {mean_early:+.2f} m/s^2")
+        # Classify on the LAUNCH SPIKE (mean accel over the first 0.5 s): a
+        # real 0.15 m/s launch reads ~0.3-0.8 m/s^2 and points in the
+        # direction of motion. Integrated dv is printed for info only — it
+        # cancels to ~0 on any start-stop pulse and is useless for direction.
+        # A dead drivetrain produces only bias noise (unit 12 measured 0.05
+        # while completely stationary — the old dv-based check misclassified
+        # it as inverted). Weak signal = inconclusive, never a guess.
+        if abs(mean_early) < 0.15:
+            print("  NO physical launch detected (rover unpowered? wheels "
+                  "blocked? serial dead?) — drive_inverted left UNWRITTEN. "
+                  "Fix power/drive, re-run, or verify by eye.")
             ok = False
         else:
-            inverted = dv < 0 if abs(dv) >= 0.03 else mean_early < 0
+            inverted = mean_early < 0
             results["drive_inverted"] = inverted
             print(f"  -> drive_inverted = {inverted} "
                   f"({'physically reversed' if inverted else 'normal'})")

@@ -63,6 +63,16 @@
   become: true
   when: qb3rt_base_sudoers_staged.changed
 
+# --- serial device access ------------------------------------------------------
+# /dev/ttyUSB* is root:dialout 0660; the rover bridge and rplidar_node run as
+# ubuntu and abort with EACCES without this (seen on qb3rt-12 first boot).
+- name: Add ubuntu to the dialout group for serial access
+  ansible.builtin.user:
+    name: ubuntu
+    groups: dialout
+    append: true
+  become: true
+
 # --- unblock key-based SSH (ubuntu password expiry / cloud-init) -------------
 # Ubuntu/cloud-init ships 'ubuntu' with an expired password, which breaks
 # non-interactive SSH — i.e. stamp/deploy/Ansible itself.
@@ -188,6 +198,13 @@
 # fastrpc/dsp daemons, so install with --force-depends rather than pulling the
 # resolute libfastrpc1/hexagon-dsp-binaries stack over the working one.
 # Debs live in files/qairt/ (gitignored); fetch them with fetch-qairt-debs.sh.
+- name: Ensure QAIRT staging dir exists
+  ansible.builtin.file:
+    path: /tmp/qairt249
+    state: directory
+    mode: "0755"
+  become: true
+
 - name: Stage QAIRT 2.49 debs on the unit
   ansible.builtin.copy:
     src: "qairt/{{ item }}"
