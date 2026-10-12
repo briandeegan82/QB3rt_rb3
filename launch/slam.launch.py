@@ -33,7 +33,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
-                        [FindPackageShare("rplidar_ros"), "launch", "rplidar_c1_launch.py"]
+                        [FindPackageShare("QB3rt"), "launch", "rplidar_c1.launch.py"]
                     )
                 ),
                 launch_arguments={"serial_port": "/dev/rplidar"}.items(),
