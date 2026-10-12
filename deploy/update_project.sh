@@ -78,6 +78,19 @@ if [ -d "$OVR" ]; then
     } || echo "  NOTE: $WRC_LIB not present — skipping vendor override."
 fi
 
+# --- 2b. rf2o_laser_odometry (prebuilt scan-match odometry) ------------------
+# No ros-jazzy deb exists and per-unit colcon builds are fragile on this
+# fleet (broken apt + TLS issues), so a stripped arm64 binary built on
+# qb3rt-12 is shipped as a merged-install tree (see files/rf2o/README.md in
+# the qb3rt_base role). Extracting at the overlay root lands the node in
+# lib/ and its ament markers in share/ament_index/.
+RF2O_TARBALL="$REPO/ansible/roles/qb3rt_base/files/rf2o/rf2o_laser_odometry.tar.gz"
+if [ -f "$RF2O_TARBALL" ]; then
+    rsync -z "$RF2O_TARBALL" "$SSH_TARGET:/tmp/rf2o_laser_odometry.tar.gz"
+    ssh "${SSHO[@]}" "$SSH_TARGET" "tar -xzf /tmp/rf2o_laser_odometry.tar.gz -C $OVERLAY && rm /tmp/rf2o_laser_odometry.tar.gz"
+    echo "  rf2o_laser_odometry merged into overlay"
+fi
+
 # --- 3. system configs (/etc) — need sudo -----------------------------------
 SYS="$REPO/system"
 if [ -d "$SYS" ]; then

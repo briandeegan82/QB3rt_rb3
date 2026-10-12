@@ -588,11 +588,14 @@ class CmdVelBridge(Node):
         odom.pose.covariance[0]  = 0.5   # x   (m²)
         odom.pose.covariance[7]  = 0.5   # y   (m²)
         odom.pose.covariance[35] = 0.5   # yaw (rad²)
-        # Diagonal twist covariance [vx, vy, vz, vrx, vry, vyaw]. vx now comes
-        # through the calibrated affine model, so it is trustworthy enough for
-        # the EKF to fuse (ekf.yaml odom0); vyaw stays weak (scrub makes the
-        # commanded yaw rate optimistic - the gyro owns rotation).
-        odom.twist.covariance[0]  = 0.04  # vx   (m/s)²
+        # Diagonal twist covariance [vx, vy, vz, vrx, vry, vyaw]. vx comes
+        # through the calibrated affine model but stays command-derived:
+        # measured vs reality was ~30% low on qb3rt-12 (concrete), so it is
+        # fused at weak weight - RF2O laser odometry (ekf.yaml odom2) owns
+        # translation when present, wheel vx is the coast fallback. vyaw
+        # stays weak (scrub makes the commanded yaw rate optimistic - the
+        # gyro owns rotation).
+        odom.twist.covariance[0]  = 0.25  # vx   (m/s)²
         odom.twist.covariance[35] = 0.5   # vyaw (rad/s)²
 
         self._odom_pub.publish(odom)

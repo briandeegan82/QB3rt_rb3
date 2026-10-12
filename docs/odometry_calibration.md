@@ -398,3 +398,49 @@ drivetrain slowness and are kept below only for history):
 > `driver_spin_boost_k` == `spin_boost_k`, `driver_track_width` ==
 > `track_width`. If you change one, change its mirror, or the sweeps mis-scale and
 > the turn recommendation / one-side twist come out wrong.
+
+## 10. RF2O laser odometry — the measured translation source
+
+The wheel model is open-loop (no encoders): it predicts motion, it does not
+measure it. `rf2o_laser_odometry` scan-to-scan matches the RPLIDAR and
+publishes **measured** planar motion on `/odom_rf2o` at scan rate (~10 Hz).
+It is fused into the EKF as `odom2` (differential x/y/yaw), and the wheel
+model's vx is kept at weak weight (twist covariance 0.25 in the bridge) as
+the coast fallback for featureless stretches.
+
+Validated on qb3rt-12 (concrete, 2026-07-28), ~1.0 m commanded legs:
+
+| Source | Reported | vs physical (tape mark) |
+|---|---|---|
+| wheel `/odom` | 0.69–0.81 m | ~30% low |
+| `/odom_rf2o` | 1.13–1.40 m | closest to truth (user-verified mark) |
+| `/odometry/filtered` (EKF) | 1.14 m | follows RF2O ~1:1 |
+
+### Deployment
+
+- No `ros-jazzy-rf2o-laser-odometry` deb exists. A stripped arm64 binary is
+  shipped as a merged-install tarball:
+  `ansible/roles/qb3rt_base/files/rf2o/rf2o_laser_odometry.tar.gz`
+  (provenance + rebuild steps in the README beside it).
+- `qb3rt_base` (base-config.yml) extracts it into `/opt/qb3rt/install`;
+  `deploy/update_project.sh` does the same for live units.
+- `launch/odometry.launch.py` starts the node (`enable_rf2o:=false` disables)
+  and the EKF consumes it — no extra launch needed.
+
+### Gotchas discovered on qb3rt-12
+
+- **`init_pose_from_topic` must point at a live pose topic.** Upstream
+  defaults to `/base_pose_ground_truth`; without an override the node waits
+  forever and silently drops every scan. We seed it from `/odom` (read once
+  at startup — the estimate is independent after that). An empty string is
+  not parseable via `-p` on the CLI.
+- **No `odom2_pose_rejection_threshold` in ekf.yaml.** RF2O publishes ~zero
+  covariance, so every honest delta reads as a huge sigma-level innovation
+  against a wheel-dragged prediction and a 3σ gate silently suppresses the
+  entire source (observed: EKF integrated 0.32 m of a real ~1.1 m drive).
+- **`publish_tf:=false` and `base_frame_id:=base_footprint`** are required —
+  the EKF owns `odom->base_footprint`; an extra publisher would put two
+  parents on the TF tree.
+- RF2O is scan matching: it needs environmental structure. In long
+  featureless corridors or dense crowds it can glide — the downweighted
+  wheel vx is what the EKF falls back to.

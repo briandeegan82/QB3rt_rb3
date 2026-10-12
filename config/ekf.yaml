@@ -3,19 +3,28 @@
 # Inputs (see QB3rt bringup wiring):
 #   odom0 : calibrated wheel odometry -> /odom          (vx only)
 #   odom1 : ORB-SLAM3 VIO             -> /vio/odometry  (x, y, yaw; differential, health-gated)
+#   odom2 : RF2O laser odometry       -> /odom_rf2o     (x, y, yaw; differential)
 #   imu0  : RB3 IMU                   -> /imu/data       (gyro: yaw rate)
 #
-# Fusion design - wheel + gyro backbone, VIO enrichment:
+# Fusion design - RF2O-measured translation + gyro rotation:
+#
+#   RF2O laser odometry (odom2) is the translation primary: scan-to-scan
+#   matching MEASURES motion, where wheel /odom only re-predicts it. On
+#   qb3rt-12 tape-marked drives (2026-07-28) RF2O tracked within ~10-20%
+#   while the command model ran ~30% low; the fused output follows RF2O ~1:1.
 #
 #   Wheel odometry /odom is dead-reckoned from cmd_vel (no encoders), BUT the
 #   rewritten bridge maps commands through the calibrated affine drive model
 #   (deadband + measured V_full), so its vx is an honest ground-speed estimate
 #   rather than the old command echo. Only vx is fused (never pose - dead
-#   reckoning; never vyaw - scrub makes the commanded yaw rate optimistic).
+#   reckoning; never vyaw - scrub makes the commanded yaw rate optimistic),
+#   at weak weight (covariance 0.25 in the bridge) as the coast fallback for
+#   featureless stretches where scan matching degenerates.
 #
 #   Rotation is owned by the gyro: the ICM-42688 has no magnetometer, so only
 #   its yaw RATE is fused (absolute yaw would drift from an arbitrary origin)
-#   and the EKF integrates heading from it at ~200 Hz.
+#   and the EKF integrates heading from it at ~200 Hz. RF2O's differential
+#   yaw adds a 10 Hz scan-matched check on top.
 #
 #   The odom frame drifts slowly (it is odometry, not localization);
 #   slam_toolbox's map->odom owns the correction, as REP-105 intends.
@@ -115,6 +124,28 @@ ekf_filter_node:
     # against its own stale last pose -> one huge outlier delta; this rejects it.
     # Loosen if it rejects genuine motion; tighten if wander leaks through.
     odom1_pose_rejection_threshold: 3.0
+
+    # --- RF2O laser odometry: measured 2D motion (2026-07-28, qb3rt-12) ---
+    # Scan-to-scan matching -> nav_msgs/Odometry on /odom_rf2o. Unlike the
+    # wheel /odom (command-model dead reckoning, ~30% low on concrete) this
+    # is MEASURED motion and tracked a tape-marked drive to within ~10-20%.
+    # Fused differentially like odom1: deltas only, so its slowly-drifting
+    # absolute pose can't fight map->odom. vyaw via the same differential
+    # path adds a scan-matched rotation check on top of the gyro.
+    odom2: /odom_rf2o
+    # x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+    odom2_config: [true,  true,  false,
+                   false, false, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom2_differential: true
+    odom2_relative: false
+    odom2_queue_size: 10
+    # NO pose_rejection_threshold: RF2O publishes ~zero covariance, so at 3sigma
+    # every honest scan-match delta reads as a huge innovation vs the
+    # wheel-dragged prediction and the whole source was silently gated out
+    # (EKF integrated 0.32m of a real ~1.1m drive, 2026-07-28).
 
     # --- RB3 IMU (primary gyro): yaw RATE only ---
     # Absolute yaw is NOT fused: the ICM-42688 is 6-axis (no magnetometer), so its

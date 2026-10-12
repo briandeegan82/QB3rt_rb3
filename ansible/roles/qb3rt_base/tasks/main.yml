@@ -256,6 +256,48 @@
     - libQnnSaver.so
   notify: restart cdsprpcd
 
+# --- RF2O laser odometry ------------------------------------------------------
+# Scan-matched odometry consumed by the EKF as odom2 (see config/ekf.yaml and
+# launch/odometry.launch.py). No ros-jazzy deb exists and per-unit colcon
+# builds are fragile on this fleet (broken fastrpc-support dep + the lab
+# network's TLS interception breaks github clones), so a stripped arm64
+# binary built on qb3rt-12 ships as a merged-install tree — extracting at the
+# overlay root lands the node in lib/ and its ament markers under
+# share/ament_index/. Provenance/rebuild notes: files/rf2o/README.md.
+- name: Check QB3rt overlay for the RF2O merge target
+  ansible.builtin.stat:
+    path: /opt/qb3rt/install/share/ament_index/resource_index/packages
+  register: qb3rt_base_ament_index
+
+- name: Stage RF2O merged-install tarball on the unit
+  ansible.builtin.copy:
+    src: rf2o/rf2o_laser_odometry.tar.gz
+    dest: /tmp/rf2o_laser_odometry.tar.gz
+    mode: "0644"
+  become: true
+  register: qb3rt_base_rf2o_staged
+  when: qb3rt_base_ament_index.stat.exists
+
+- name: Merge RF2O into the /opt/qb3rt overlay
+  ansible.builtin.command:
+    tar -xzf /tmp/rf2o_laser_odometry.tar.gz -C /opt/qb3rt/install
+  become: true
+  when: qb3rt_base_ament_index.stat.exists and qb3rt_base_rf2o_staged.changed
+
+- name: Remove staged RF2O tarball
+  ansible.builtin.file:
+    path: /tmp/rf2o_laser_odometry.tar.gz
+    state: absent
+  when: qb3rt_base_rf2o_staged is not skipped
+
+- name: Warn when RF2O install was skipped (no overlay yet)
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: /opt/qb3rt overlay not found — RF2O not
+      installed. Deploy the project (deploy/update_project.sh), which also
+      merges the binary, or rerun this role after the overlay exists.
+  when: not qb3rt_base_ament_index.stat.exists
+
 # --- per-unit hardware convention probe ---------------------------------------
 # Installed but NOT run by base-config — it drives the wheels and needs an
 # operator placing a calibration obstacle. Run interactively per unit:

@@ -25,6 +25,9 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
+  <!-- Scan-matched laser odometry (/odom_rf2o -> EKF odom2). No apt package;
+       installed as a prebuilt binary by qb3rt_base / update_project.sh. -->
+  <exec_depend>rf2o_laser_odometry</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
