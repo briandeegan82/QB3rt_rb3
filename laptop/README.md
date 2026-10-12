@@ -34,6 +34,19 @@ drops mid-drive.
    The robot side uses `/etc/qb3rt/cyclonedds.xml`, loaded via
    `/etc/profile.d/qb3rt-ros-env.sh`.
 
+4. Turn off WiFi power save on the laptop. The robots have it off (golden
+   image / `ansible/playbooks/wifi-powersave-off.yml`), but either end having
+   it on is enough to wreck the link: measured at −41 dBm, power save on gave
+   35% packet loss and multi-second RTT, and power save off gave 0% loss and
+   ~5 ms. It looks like a broken network, not a power setting.
+
+   ```bash
+   sudo cp /path/to/QB3rt/system/99-wifi-powersave-off.conf /etc/NetworkManager/conf.d/
+   sudo nmcli general reload conf
+   sudo iw dev <wifi-iface> set power_save off   # current connection; the conf covers reconnects
+   iw dev <wifi-iface> get power_save            # -> Power save: off
+   ```
+
 ## Clock sync (do not skip)
 
 TF is stamped by the robot and consumed on the laptop. If the clocks disagree

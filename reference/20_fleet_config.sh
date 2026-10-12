@@ -12,6 +12,7 @@
 #   /etc/sysctl.d/98-agv-dds.conf        UDP socket buffer limits for DDS
 #   /etc/udev/rules.d/80-movidius.rules  OAK-D / DepthAI USB access
 #   /etc/profile.d/qb3rt-ros-env.sh      ROS + overlay + DDS env for login shells
+#   /etc/NetworkManager/conf.d/99-wifi-powersave-off.conf   WiFi power save off
 #   systemd-timesyncd NTP -> host        (RB3 has no battery-backed RTC)
 set -euo pipefail
 
@@ -99,6 +100,15 @@ $SUDO udevadm control --reload-rules && $SUDO udevadm trigger || true
 log "Installing /etc/profile.d/qb3rt-ros-env.sh"
 $SUDO cp "$SYS/qb3rt-ros-env.sh" /etc/profile.d/qb3rt-ros-env.sh
 $SUDO chmod 644 /etc/profile.d/qb3rt-ros-env.sh
+
+# --- WiFi power save off ----------------------------------------------------
+# Power save on costs 35% packet loss and seconds of RTT on a good link, which
+# makes any ROS traffic over WiFi unusable (see the file for measurements).
+# Takes effect on the next connection activation, i.e. first boot of the image.
+log "Disabling WiFi power save (NetworkManager default)"
+$SUDO mkdir -p /etc/NetworkManager/conf.d
+$SUDO cp "$SYS/99-wifi-powersave-off.conf" /etc/NetworkManager/conf.d/99-wifi-powersave-off.conf
+$SUDO chmod 644 /etc/NetworkManager/conf.d/99-wifi-powersave-off.conf
 
 # --- clock sync (no RTC on the RB3) -----------------------------------------
 log "Configuring systemd-timesyncd NTP -> ${NTP_HOST}"
