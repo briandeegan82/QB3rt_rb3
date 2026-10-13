@@ -23,14 +23,19 @@
           its nose mid-probe. Press ENTER to begin.
 
     - name: Ensure base stack is running (bridge + IMU)
+      # systemd-run, not nohup/setsid: sshd's cgroup teardown kills the whole
+      # session slice on disconnect (Ubuntu 24.04 socket-activated sshd), so
+      # even setsid'd children die. A transient service lives outside the
+      # session entirely.
       ansible.builtin.shell: |
         source /etc/profile
         pgrep -f waverover_bridge >/dev/null && exit 0
-        nohup ros2 launch QB3rt odometry.launch.py enable_base_driver:=true \
-          > /tmp/probe_stack.log 2>&1 &
+        systemd-run --unit=qb3rt-probe-stack --collect \
+          bash -lc "exec ros2 launch QB3rt odometry.launch.py enable_base_driver:=true" \
+          > /tmp/probe_stack.log 2>&1
         sleep 15
         pgrep -f waverover_bridge >/dev/null
-      become: false
+      become: true       # systemd-run system service survives session teardown
       args:
         executable: /bin/bash
 
@@ -41,6 +46,12 @@
       ansible.builtin.shell: |
         source /etc/profile
         timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average && exit 0
+        # The container takes a few seconds to register on DDS after launch —
+        # wait for it before attempting the component load.
+        for i in $(seq 1 30); do
+          ros2 node list 2>/dev/null | grep -qx /imu_container && break
+          sleep 2
+        done
         ros2 component load /imu_container qrb_ros_imu qrb_ros::imu::ImuComponent \
           --node-name imu --remap imu:=/imu/data
         sleep 4
@@ -53,10 +64,12 @@
       ansible.builtin.shell: |
         source /etc/profile
         timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average && exit 0
-        nohup ros2 launch QB3rt rplidar_c1.launch.py > /tmp/probe_lidar.log 2>&1 &
+        systemd-run --unit=qb3rt-probe-lidar --collect \
+          bash -lc "exec ros2 launch QB3rt rplidar_c1.launch.py" \
+          > /tmp/probe_lidar.log 2>&1
         sleep 8
         timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average
-      become: false
+      become: true       # same transient-service reasoning as the base stack
       args:
         executable: /bin/bash
 
