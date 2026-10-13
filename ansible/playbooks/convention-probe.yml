@@ -31,6 +31,8 @@
         sleep 15
         pgrep -f waverover_bridge >/dev/null
       become: false
+      args:
+        executable: /bin/bash
 
     - name: Ensure RPLIDAR is publishing /scan
       ansible.builtin.shell: |
@@ -40,6 +42,8 @@
         sleep 8
         timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average
       become: false
+      args:
+        executable: /bin/bash
 
     - name: Place calibration object at the nose
       ansible.builtin.pause:
@@ -59,7 +63,7 @@
 
     - name: Stop any residual stack motion
       ansible.builtin.command: >-
-        sh -c 'source /etc/profile &&
+        bash -c 'source /etc/profile &&
                ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{}" --once'
       failed_when: false
       changed_when: false

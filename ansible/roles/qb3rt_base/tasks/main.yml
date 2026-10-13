@@ -284,10 +284,11 @@
   become: true
   when: qb3rt_base_ament_index.stat.exists and qb3rt_base_rf2o_staged.changed
 
-- name: Remove staged RF2O tarball
+- name: Remove staged RF2O tarball (root-owned, /tmp is sticky)
   ansible.builtin.file:
     path: /tmp/rf2o_laser_odometry.tar.gz
     state: absent
+  become: true
   when: qb3rt_base_rf2o_staged is not skipped
 
 - name: Warn when RF2O install was skipped (no overlay yet)
