@@ -29,12 +29,19 @@
       # session entirely.
       ansible.builtin.shell: |
         source /etc/profile
-        pgrep -f waverover_bridge >/dev/null && exit 0
+        # Check the ROS node, not the process: `pgrep -f waverover_bridge`
+        # self-matches the cmdline of this very shell and would exit 0
+        # having launched nothing. HOME=/root for the service: systemd-run
+        # runs with an empty environment and ros2 launch dies on
+        # rcutils_expand_user (no ~/.ros logging dir) without it.
+        systemctl is-active --quiet qb3rt-probe-stack.service && \
+          ros2 node list 2>/dev/null | grep -qx /waverover_bridge && exit 0
         systemd-run --unit=qb3rt-probe-stack --collect \
+          --setenv=HOME=/root \
           bash -lc "exec ros2 launch QB3rt odometry.launch.py enable_base_driver:=true" \
           > /tmp/probe_stack.log 2>&1
         sleep 15
-        pgrep -f waverover_bridge >/dev/null
+        ros2 node list 2>/dev/null | grep -qx /waverover_bridge
       become: true       # systemd-run system service survives session teardown
       args:
         executable: /bin/bash
@@ -65,6 +72,7 @@
         source /etc/profile
         timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average && exit 0
         systemd-run --unit=qb3rt-probe-lidar --collect \
+          --setenv=HOME=/root \
           bash -lc "exec ros2 launch QB3rt rplidar_c1.launch.py" \
           > /tmp/probe_lidar.log 2>&1
         sleep 8
