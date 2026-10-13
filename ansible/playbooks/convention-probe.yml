@@ -34,6 +34,21 @@
       args:
         executable: /bin/bash
 
+    # The qrb IMU composable component can silently fail to load into
+    # imu_container (seen on qb3rt-10 and qb3rt-12): the container runs but
+    # /imu/data never publishes. Detect and load it manually.
+    - name: Ensure the IMU component actually publishes /imu/data
+      ansible.builtin.shell: |
+        source /etc/profile
+        timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average && exit 0
+        ros2 component load /imu_container qrb_ros_imu qrb_ros::imu::ImuComponent \
+          --node-name imu --remap imu:=/imu/data
+        sleep 4
+        timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average
+      become: false
+      args:
+        executable: /bin/bash
+
     - name: Ensure RPLIDAR is publishing /scan
       ansible.builtin.shell: |
         source /etc/profile
@@ -52,7 +67,10 @@
           NOSE (the camera-facing end). Press ENTER when placed.
 
     - name: Run the convention probe (drives wheels, reads IMU + scan)
-      ansible.builtin.command: qb3rt-convention-probe
+      # become + plain command = bare root env: no /etc/profile, so rclpy is
+      # unimportable and the probe dies silently (failed_when:false masks it).
+      # bash -lc loads the root login profile incl. the ROS env.
+      ansible.builtin.command: bash -lc 'qb3rt-convention-probe'
       become: true
       register: probe_out
       failed_when: false

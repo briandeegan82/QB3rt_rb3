@@ -36,6 +36,9 @@ def generate_launch_description():
             # "True"/"False". use_localization=True runs AMCL/map_server for standalone
             # saved-map navigation; full_stack overrides it to "False" (slam_toolbox owns
             # map->odom there, so Nav2 runs navigation-only).
+            # NB: upstream's slam_toolbox include is gated on `slam AND
+            # use_localization` — to run Nav2 in live-SLAM mode (no saved map),
+            # pass BOTH slam:=True and use_localization:=True.
             DeclareLaunchArgument("use_localization", default_value="True"),
             DeclareLaunchArgument("slam", default_value="False"),
             IncludeLaunchDescription(

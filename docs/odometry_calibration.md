@@ -444,3 +444,14 @@ Validated on qb3rt-12 (concrete, 2026-07-28), ~1.0 m commanded legs:
 - RF2O is scan matching: it needs environmental structure. In long
   featureless corridors or dense crowds it can glide — the downweighted
   wheel vx is what the EKF falls back to.
+- **Restart the EKF if a pose source restarts.** Seen on qb3rt-10: after
+  duplicate EKF/RF2O churn the fused pose blew up to ~±5e8 m while both
+  inputs stayed sane — differential mode can take a poisoned jump when a
+  source's internal origin resets. Symptom: `odom->base_footprint` TF reads
+  absurd translations and Nav2 global costmap fails TF. `ros2 run
+  robot_localization ekf_node` restart clears it (state starts at origin).
+- **`ros2 launch QB3rt nav.launch.py ... slam:=True` needs BOTH
+  `slam:=True` and `use_localization:=True`** — nav2_bringup gates its
+  slam_toolbox include on `slam AND use_localization`. Passing
+  `use_localization:=False` silently starts Nav2 with no map->odom and the
+  global costmap times out waiting for it.
