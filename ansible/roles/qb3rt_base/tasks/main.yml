@@ -256,6 +256,55 @@
     - libQnnSaver.so
   notify: restart cdsprpcd
 
+# --- YOLOE model artifacts ----------------------------------------------------
+# AI Hub yoloe_seg context binaries (QAIRT 2.49 / V68). Not in git (~92 MB) —
+# stage them once on the control host:
+#   ansible/roles/qb3rt_base/files/yoloe/fetch-yoloe-models.sh
+# The matching vocab/quant sidecars (config/yoloe_*.yaml) ship in the QB3rt
+# payload via update_project.sh; only the .bins come through here.
+- name: Check YOLOE model staging on the control host
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/yoloe/{{ item }}"
+  delegate_to: localhost
+  register: qb3rt_base_yoloe_staged
+  loop:
+    - yoloe_coco80_qa249.bin
+    - yoloe_lab_qa249.bin
+
+- name: Ensure /home/ubuntu/models exists (ubuntu-owned)
+  ansible.builtin.file:
+    path: /home/ubuntu/models
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+  become: true
+
+- name: Sync YOLOE context binaries to the unit
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/yoloe/{{ item.item }}"
+    dest: "/home/ubuntu/models/{{ item.item }}"
+  when: item.stat.exists
+  loop: "{{ qb3rt_base_yoloe_staged.results }}"
+
+- name: Ensure models are ubuntu-owned
+  ansible.builtin.file:
+    path: "/home/ubuntu/models/{{ item.item }}"
+    owner: ubuntu
+    group: ubuntu
+  become: true
+  when: item.stat.exists
+  loop: "{{ qb3rt_base_yoloe_staged.results }}"
+
+- name: Warn when YOLOE models are not staged on the control host
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: no yoloe_*.bin staged in files/yoloe/ — run
+      files/yoloe/fetch-yoloe-models.sh once on the control host. The unit will
+      still launch perception.launch.py but the inference node will fail to
+      open its model.
+  when: not (qb3rt_base_yoloe_staged.results | selectattr('stat.exists') | list)
+
 # --- RF2O laser odometry ------------------------------------------------------
 # Scan-matched odometry consumed by the EKF as odom2 (see config/ekf.yaml and
 # launch/odometry.launch.py). No ros-jazzy deb exists and per-unit colcon

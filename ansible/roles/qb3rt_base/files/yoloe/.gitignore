@@ -1,0 +1,3 @@
+# Model binaries are large (~46 MB each) — not committed.
+# Stage them with ../fetch-yoloe-models.sh (or stage-yoloe-models.sh beside it).
+*.bin

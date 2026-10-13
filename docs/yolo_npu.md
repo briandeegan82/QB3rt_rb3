@@ -53,6 +53,22 @@ python3 -c "import json,yaml; d=json.load(open('/tmp/m.json'));
 (The AI Hub inference job output already has these values; both models share
 identical scales/offsets.)
 
+### Fleet deployment of the .bin files
+
+The bins are ~46 MB each and NOT in git — they stage through the qb3rt_base
+role exactly like the QAIRT debs:
+
+```bash
+# once on the control host:
+ansible/roles/qb3rt_base/files/yoloe/fetch-yoloe-models.sh
+# then per unit / fleet-wide:
+ansible-playbook playbooks/base-config.yml [-l qb3rt-N]
+```
+
+The role rsyncs them to `/home/ubuntu/models/` (ubuntu-owned) — the path
+`perception.launch.py`'s `model:=` default expects. Label/quant yamls ride
+the normal project payload (`config/yoloe_*.yaml` → share/QB3rt).
+
 ## QAIRT version requirement — THE reason the fleet needs 2.49
 
 Units ship with qairt 2.46 (noble apt). Two hard blockers:
