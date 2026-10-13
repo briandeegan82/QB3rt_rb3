@@ -348,6 +348,35 @@
       merges the binary, or rerun this role after the overlay exists.
   when: not qb3rt_base_ament_index.stat.exists
 
+# --- OpenVINS ov_msckf (experimental VIO) --------------------------------------
+# Stereo-capable MSCKF visual-inertial odometry, configured mono OV9282 + IMU
+# for the RB3. EXPERIMENTAL: deploys the binaries + a Kalibr'd config only —
+# nothing consumes its output yet (not wired into the EKF) and init currently
+# diverges on this rig (see files/openvins/README.md). Same merged-install
+# pattern as RF2O: no deb, per-unit builds are fragile, so a stripped arm64
+# tree built on qb3rt-12 ships as a tarball.
+- name: Stage OpenVINS merged-install tarball on the unit
+  ansible.builtin.copy:
+    src: openvins/openvins_ov_msckf.tar.gz
+    dest: /tmp/openvins_ov_msckf.tar.gz
+    mode: "0644"
+  become: true
+  register: qb3rt_base_openvins_staged
+  when: qb3rt_base_ament_index.stat.exists
+
+- name: Merge OpenVINS into the /opt/qb3rt overlay
+  ansible.builtin.command:
+    tar -xzf /tmp/openvins_ov_msckf.tar.gz -C /opt/qb3rt/install
+  become: true
+  when: qb3rt_base_ament_index.stat.exists and qb3rt_base_openvins_staged.changed
+
+- name: Remove staged OpenVINS tarball (root-owned, /tmp is sticky)
+  ansible.builtin.file:
+    path: /tmp/openvins_ov_msckf.tar.gz
+    state: absent
+  become: true
+  when: qb3rt_base_openvins_staged is not skipped
+
 # --- per-unit hardware convention probe ---------------------------------------
 # Installed but NOT run by base-config — it drives the wheels and needs an
 # operator placing a calibration obstacle. Run interactively per unit:

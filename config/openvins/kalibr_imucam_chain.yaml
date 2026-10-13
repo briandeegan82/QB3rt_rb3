@@ -1,0 +1,16 @@
+%YAML:1.0
+
+cam0:
+  T_imu_cam: # camera pose in IMU frame (Kalibr IMU.T_b_c1 from orbslam3_ov9282_imu.yaml)
+    - [0.9999878475, 0.0029333643, -0.0039623511, 0.0140819564]
+    - [0.0015378460, 0.5780185589,  0.8160221692, 0.0849099141]
+    - [0.0046840028,-0.8160183460,  0.5780070234, 0.0791549663]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: []
+  camera_model: pinhole
+  # KannalaBrandt8 == pinhole + equidistant distortion
+  distortion_coeffs: [-0.0009447430487445625, 0.025130057509402948, -0.021676146999977924, 0.006033656681603929]
+  distortion_model: equidistant
+  intrinsics: [548.085898406508, 548.4774617118545, 644.9772256555007, 377.2732751030379] # fu, fv, cu, cv
+  resolution: [1280, 720]
+  rostopic: /image_raw

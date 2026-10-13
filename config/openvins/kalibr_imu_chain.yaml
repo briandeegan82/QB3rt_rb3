@@ -1,0 +1,36 @@
+%YAML:1.0
+
+imu0:
+  T_i_b:
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  accelerometer_noise_density: 0.0036871293722761244   # from IMU.NoiseAcc (m/s^1.5)
+  accelerometer_random_walk: 0.0006277545208403863     # from IMU.AccWalk  (m/s^2.5)
+  gyroscope_noise_density: 0.0004903452510492971       # from IMU.NoiseGyro (rad/s^0.5)
+  gyroscope_random_walk: 4.784937770862236e-05         # from IMU.GyroWalk (rad/s^1.5)
+  rostopic: /imu/data
+  time_offset: 0.0   # camera-IMU offset is estimated online (calib_cam_timeoffset)
+  update_rate: 200.0
+  model: "kalibr"
+  Tw:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  R_IMUtoGYRO:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  Ta:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  R_IMUtoACC:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  Tg:
+    - [ 0.0, 0.0, 0.0 ]
+    - [ 0.0, 0.0, 0.0 ]
+    - [ 0.0, 0.0, 0.0 ]

@@ -91,6 +91,18 @@ if [ -f "$RF2O_TARBALL" ]; then
     echo "  rf2o_laser_odometry merged into overlay"
 fi
 
+# --- 2c. OpenVINS ov_msckf (experimental VIO) ----------------------------------
+# Same merged-install pattern as rf2o — prebuilt stripped arm64 tree built on
+# qb3rt-12 (see ansible/roles/qb3rt_base/files/openvins/README.md). Deploys the
+# binaries + nothing consumes them yet; mono+IMU config ships under
+# config/openvins/ in the QB3rt package.
+OV_TARBALL="$REPO/ansible/roles/qb3rt_base/files/openvins/openvins_ov_msckf.tar.gz"
+if [ -f "$OV_TARBALL" ]; then
+    rsync -z "$OV_TARBALL" "$SSH_TARGET:/tmp/openvins_ov_msckf.tar.gz"
+    ssh "${SSHO[@]}" "$SSH_TARGET" "tar -xzf /tmp/openvins_ov_msckf.tar.gz -C $OVERLAY && rm /tmp/openvins_ov_msckf.tar.gz"
+    echo "  openvins ov_msckf merged into overlay"
+fi
+
 # --- 3. system configs (/etc) — need sudo -----------------------------------
 SYS="$REPO/system"
 if [ -d "$SYS" ]; then
