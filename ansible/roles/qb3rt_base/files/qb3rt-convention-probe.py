@@ -9,13 +9,15 @@ some units. Students should verify, not discover — this probe automates the
 discovery so provisioning can stamp a known-good baseline.
 
 Probes (each is a short, bounded cmd_vel pulse):
-  1. linear:   +x pulse; IMU accel_x integration gives physical dv. Sign
-               flips on an inverted drivetrain -> drive_inverted.
+  1. linear:   +x pulse; the near obstacle's scan range shrinking means the
+               chassis moved toward its nose (forward) — the discriminator
+               is the lidar, not IMU accel, because IMU-x vs body-x sign is
+               itself a per-unit convention (qb3rt-17). IMU launch accel is
+               kept as a fallback only.
   2. angular:  +z pulse; mean gyro_z must be positive (REP-103). A negative
                mean is flagged for MANUAL review (no auto-fix exists).
-  3. lidar:    operator places a tall object ~0.5 m in front of the intended
-               nose (camera-facing end). The scan angle of the near cluster
-               reveals where scan-zero physically points -> lidar_yaw.
+  3. lidar:    the same front obstacle's raw scan angle reveals where
+               scan-zero physically points -> lidar_yaw.
 
 Prereqs on the unit: the base stack must be RUNNING (waverover_bridge for
 cmd_vel, IMU publisher, RPLIDAR):
@@ -33,6 +35,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.srv import GetParameters
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu, LaserScan
 
@@ -64,6 +67,32 @@ class Probe(Node):
         print(f"ERROR: no {what} after {timeout:.0f}s — is the base stack up?")
         return False
 
+    def bridge_drive_inverted(self):
+        """Read the waverover_bridge's CURRENTLY EFFECTIVE drive_inverted
+        (yaml default folded with any existing conventions override). The
+        linear probe's +x pulse runs under that active setting, so the
+        correct write is `current` when motion is forward and `not current`
+        when backward — NOT a hard-coded true. Without this the yaml's
+        fleet default (true, qb3rt-7's quirk) makes every normal-polarity
+        unit drive backward during the probe and get misclassified."""
+        cli = self.create_client(GetParameters, "/waverover_bridge/get_parameters")
+        if not cli.wait_for_service(timeout_sec=3.0):
+            print("  (could not read bridge drive_inverted param — "
+                  "assuming the active setting is false)")
+            return False
+        req = GetParameters.Request()
+        req.names = ["drive_inverted"]
+        fut = cli.call_async(req)
+        t0 = time.time()
+        while time.time() - t0 < 3.0:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if fut.done():
+                vals = fut.result().values
+                if vals:
+                    return bool(vals[0].bool_value)
+                break
+        return False
+
     def pulse(self, linear=0.0, angular=0.0, secs=1.0):
         """Command a bounded twist; collect IMU samples during the pulse."""
         self.imu.clear()
@@ -79,9 +108,25 @@ class Probe(Node):
         return list(self.imu)
 
 
+def nearest_obstacle_range(scan):
+    """Nearest valid return in 0.2..1.0 m — the calibration object placed at
+    the nose. Frame-independent: physical distance, no yaw convention needed."""
+    if scan is None:
+        return None
+    best = None
+    for r in scan.ranges:
+        if 0.2 < r < 1.0 and math.isfinite(r):
+            if best is None or r < best:
+                best = r
+    return best
+
+
 def probe_linear(p):
     print("linear probe: +x 0.15 m/s for 1.2 s (watch the robot) ...")
+    r0 = nearest_obstacle_range(p.scan)
     samples = p.pulse(linear=0.15, secs=1.2)
+    p.spin(0.3)  # let a post-pulse scan arrive
+    r1 = nearest_obstacle_range(p.scan)
     if len(samples) < 20:
         return None, f"insufficient IMU samples ({len(samples)})"
     # Integrate accel_x over the pulse -> delta-v. Sign says which way the
@@ -100,7 +145,8 @@ def probe_linear(p):
         if (m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 - t0) < 0.5
     ]
     mean_early = sum(early) / len(early) if early else 0.0
-    return (dv, mean_early), None
+    dr = (r0 - r1) if (r0 is not None and r1 is not None) else None
+    return (dv, mean_early, dr), None
 
 
 def probe_angular(p):
@@ -138,6 +184,17 @@ def main():
     if not p.wait_for("scan", lambda: p.scan is not None):
         return 2
 
+    # The calibration object must be in place BEFORE the linear pulse — the
+    # range-shrink during the pulse is the direction discriminator.
+    if sys.stdin.isatty():
+        input("Place a tall object ~0.5 m in front of the robot's NOSE "
+              "(camera-facing end), then press ENTER ...")
+    else:
+        print("Non-interactive run — assuming the calibration object is "
+              "already at the nose; settling 2 s ...")
+        time.sleep(2.0)
+    p.spin(1.0)
+
     results = {}
     ok = True
 
@@ -147,25 +204,42 @@ def main():
         print(f"linear probe FAILED: {err} — set drive_inverted manually")
         ok = False
     else:
-        dv, mean_early = r
-        print(f"  integrated dv = {dv:+.3f} m/s, launch mean accel = {mean_early:+.2f} m/s^2")
-        # Classify on the LAUNCH SPIKE (mean accel over the first 0.5 s): a
-        # real 0.15 m/s launch reads ~0.3-0.8 m/s^2 and points in the
-        # direction of motion. Integrated dv is printed for info only — it
-        # cancels to ~0 on any start-stop pulse and is useless for direction.
-        # A dead drivetrain produces only bias noise (unit 12 measured 0.05
-        # while completely stationary — the old dv-based check misclassified
-        # it as inverted). Weak signal = inconclusive, never a guess.
-        if abs(mean_early) < 0.15:
+        dv, mean_early, dr = r
+        print(f"  integrated dv = {dv:+.3f} m/s, launch mean accel = "
+              f"{mean_early:+.2f} m/s^2, obstacle range delta = "
+              f"{'n/a' if dr is None else f'{dr:+.3f} m'}")
+        # PRIMARY discriminator: obstacle range delta. The object sits at the
+        # physical nose, so dr > 0 (approached) means the pulse drove FORWARD
+        # and dr < 0 (receded) means BACKWARD — regardless of IMU mounting
+        # convention (qb3rt-17's IMU-x disagreed with body-x). A 1.2 s pulse
+        # at 0.15 m/s moves ~0.15-0.2 m, far above C1 range noise (~2 cm).
+        # FALLBACK: IMU launch-spike sign, only when the lidar can't see the
+        # object or the delta is ambiguous (<5 cm). A dead drivetrain gives
+        # both ~0 — inconclusive, never a guess.
+        if dr is not None and abs(dr) > 0.05:
+            forward = dr > 0
+            if (mean_early > 0) != forward and abs(mean_early) >= 0.15:
+                print(f"  NOTE: IMU accel sign disagrees with lidar "
+                      f"(accel {'+' if mean_early > 0 else '-'}, motion "
+                      f"{'forward' if forward else 'backward'}) — this "
+                      f"unit's IMU-x is flipped vs body-x; trusting lidar.")
+        elif abs(mean_early) >= 0.15:
+            forward = mean_early > 0
+            print("  (lidar delta unusable — fell back to IMU launch accel)")
+        else:
             print("  NO physical launch detected (rover unpowered? wheels "
                   "blocked? serial dead?) — drive_inverted left UNWRITTEN. "
                   "Fix power/drive, re-run, or verify by eye.")
             ok = False
-        else:
-            inverted = mean_early < 0
-            results["drive_inverted"] = inverted
-            print(f"  -> drive_inverted = {inverted} "
-                  f"({'physically reversed' if inverted else 'normal'})")
+            forward = None
+        if forward is not None:
+            current = p.bridge_drive_inverted()
+            # Backward motion while `current` is active means the flip is
+            # wrong -> write the opposite. Forward means keep it.
+            results["drive_inverted"] = current if forward else not current
+            print(f"  -> drive_inverted = {results['drive_inverted']} "
+                  f"(active during pulse: {current}; motion "
+                  f"{'forward' if forward else 'backward'})")
 
     # --- angular ----------------------------------------------------------
     wz, err = probe_angular(p)
@@ -184,14 +258,6 @@ def main():
             print("  -> yaw convention OK (CCW positive)")
 
     # --- lidar -------------------------------------------------------------
-    if sys.stdin.isatty():
-        input("\nPlace a tall object ~0.5 m in front of the robot's NOSE "
-              "(camera-facing end), then press ENTER ...")
-    else:
-        print("\nNon-interactive run — assuming the calibration object is "
-              "already at the nose; settling 2 s ...")
-        time.sleep(2.0)
-    p.spin(1.0)
     r, err = probe_lidar(p)
     if err:
         print(f"lidar probe FAILED: {err} — set lidar_yaw manually")
