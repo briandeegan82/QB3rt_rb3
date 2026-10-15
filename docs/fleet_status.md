@@ -18,7 +18,7 @@ need `base-config` + payload + probe to reach current standard.
 | 6  | even | yes | pinned | ~95% — interrupted at QAIRT staging | no | no | — | rerun base-config to converge, then payload + probe |
 | 7  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (forward + CCW); original source of fleet `drive_inverted: true` default, but with current board mounting `false` is correct |
 | 8  | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** |
-| 9  | odd  | yes | pinned | in progress | no | no | — | image was missing `renesas_usb_fw.mem` — dead USB bus fixed manually; base-config running |
+| 9  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (probe misclassified; lidar tracked a non-nose obstacle); shipped without `renesas_usb_fw.mem` — dead USB fixed |
 | 10 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — reference unit (SLAM/Nav2/YOLOE verified) |
 | 11 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 12 | even | yes | pinned | partial (legacy) | legacy | no | — | has ov_msckf build + idle VIO stack; clock-skew prone; needs probe |

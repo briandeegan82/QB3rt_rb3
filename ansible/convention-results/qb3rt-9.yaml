@@ -1,0 +1,8 @@
+# Per-unit hardware conventions, measured by qb3rt-convention-probe.
+# Consumed by: wave_rover_bridge.py (drive_inverted) and
+# static_transforms.launch.py (lidar_yaw default).
+# probed: 2026-10-15 18:25:49 on qb3rt-9
+# drive_inverted corrected by physical verification: under `true` a +x
+# pulse drove sensor-nose-backward; `false` verified forward.
+drive_inverted: false
+lidar_yaw: 0.0
