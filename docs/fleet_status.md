@@ -22,7 +22,7 @@ need `base-config` + payload + probe to reach current standard.
 | 10 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — reference unit (SLAM/Nav2/YOLOE verified) |
 | 11 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 12 | even | yes | pinned | partial (legacy) | legacy | no | — | has ov_msckf build + idle VIO stack; clock-skew prone; needs probe |
-| 13 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
+| 13 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye; Wi-Fi radio was disabled (only dock ethernet); renesas fw was missing but ROM fallback kept USB alive |
 | 14 | even | yes | pinned | legacy | ? | no | — | stamped, symlinks live; needs current pipeline |
 | 15 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 16 | even | yes | pinned (today) | ~40% — dropped off net mid QAIRT staging | no | no | — | **offline** — rerun base-config when it reappears |
