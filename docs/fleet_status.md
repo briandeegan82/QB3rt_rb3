@@ -12,7 +12,7 @@ need `base-config` + payload + probe to reach current standard.
 |---:|---|---|---|---|---|---|---|---|
 | 1  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 2  | even | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
-| 3  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
+| 3  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on its floor) |
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
 | 5  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 6  | even | yes | pinned | ~95% — interrupted at QAIRT staging | no | no | — | rerun base-config to converge, then payload + probe |
