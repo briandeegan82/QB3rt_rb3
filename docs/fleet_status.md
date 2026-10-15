@@ -16,9 +16,9 @@ need `base-config` + payload + probe to reach current standard.
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
 | 5  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 6  | even | yes | pinned | ~95% — interrupted at QAIRT staging | no | no | — | rerun base-config to converge, then payload + probe |
-| 7  | odd  | yes | pinned | legacy | ? | no | inverted drivetrain — source of fleet `drive_inverted: true` default | legacy-stamped |
+| 7  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (forward + CCW); original source of fleet `drive_inverted: true` default, but with current board mounting `false` is correct |
 | 8  | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** |
-| 9  | odd  | yes | none | hostname only | ? | no | — | stamped w/o serial pinning; seen live at .9 earlier |
+| 9  | odd  | yes | pinned | in progress | no | no | — | image was missing `renesas_usb_fw.mem` — dead USB bus fixed manually; base-config running |
 | 10 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — reference unit (SLAM/Nav2/YOLOE verified) |
 | 11 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 12 | even | yes | pinned | partial (legacy) | legacy | no | — | has ov_msckf build + idle VIO stack; clock-skew prone; needs probe |
@@ -51,8 +51,13 @@ not a real unit.
 - **No WAN on ROS_NET_EVEN or ROS_NET_ODD** — `https-time-sync` fails on
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
-- **3 of 5 probed units need `drive_inverted: true`** (7, 17, 22, 24 vs
-  8, 10 `false`) — the eyeball check during the probe is not optional.
+- **`drive_inverted` splits roughly evenly** (true: 17, 22, 24; false:
+  3, 7, 8, 10) — the eyeball check during the probe is not optional.
+- **Missing `renesas_usb_fw.mem` = dead USB bus** — unit 9's image lacked
+  the Renesas uPD720201 host-controller firmware; no ttyUSB devices at
+  all. Fixed by installing the blob + PCI rebind; `qb3rt_base` now stages
+  `renesas_usb_fw.mem` fleet-wide. If a unit shows zero `/dev/ttyUSB*`,
+  check `dmesg | grep renesas` first.
 - **Unit 17's IMU-x is flipped vs body-x** — IMU accel sign is not a
   reliable forward indicator fleet-wide; the probe's lidar-range delta is
   the primary discriminant for exactly this reason.

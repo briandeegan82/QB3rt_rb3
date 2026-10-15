@@ -124,6 +124,31 @@
   become: true
   changed_when: false
 
+# --- USB host controller firmware ----------------------------------------------
+# The mezzanine's Renesas uPD720201 PCIe USB host controller needs
+# renesas_usb_fw.mem at probe time; if it is absent the whole USB bus is dead
+# (no lidar/rover). Some images ship without it.
+- name: Install Renesas uPD720201 xHCI firmware
+  ansible.builtin.copy:
+    src: renesas_usb_fw.mem
+    dest: /lib/firmware/renesas_usb_fw.mem
+    mode: "0644"
+  become: true
+  register: qb3rt_renesas_fw
+
+- name: Rebind xhci_hcd so the firmware is picked up without a reboot
+  ansible.builtin.shell: |
+    for dev in /sys/bus/pci/drivers/xhci_hcd/000*:*; do
+      [ -e "$dev" ] && echo "$(basename "$dev")" > /sys/bus/pci/drivers/xhci_hcd/unbind
+    done
+    sleep 2
+    for dev in /sys/bus/pci/devices/*/class; do
+      [ "$(cat "$dev")" = "0x0c0330" ] && echo "$(basename "$(dirname "$dev")")" > /sys/bus/pci/drivers/xhci_hcd/bind
+    done
+    sleep 3
+  become: true
+  when: qb3rt_renesas_fw.changed
+
 # --- udev ---------------------------------------------------------------------
 - name: Install OAK-D / DepthAI udev rules
   ansible.builtin.copy:
