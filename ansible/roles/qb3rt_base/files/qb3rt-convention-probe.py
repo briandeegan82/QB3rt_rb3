@@ -185,8 +185,10 @@ def main():
         return 2
 
     # The calibration object must be in place BEFORE the linear pulse — the
-    # range-shrink during the pulse is the direction discriminator.
-    if sys.stdin.isatty():
+    # range-shrink during the pulse is the direction discriminator. The --yes
+    # flag skips the prompt: isatty() alone is unreliable because ansible's
+    # command channel presents a pty, which blocks on input() forever.
+    if sys.stdin.isatty() and "--yes" not in sys.argv:
         input("Place a tall object ~0.5 m in front of the robot's NOSE "
               "(camera-facing end), then press ENTER ...")
     else:
