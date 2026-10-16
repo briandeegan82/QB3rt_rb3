@@ -36,7 +36,8 @@
       ansible.builtin.debug:
         msg:
           status: "{{ qb3rt_health_status.stdout_lines }}"
-          topics: "{{ dict(qb3rt_health_topics_out.results | default([]) | selectattr('stdout', 'defined') | map(attribute='item') | zip(qb3rt_health_topics_out.results | default([]) | selectattr('stdout', 'defined') | map(attribute='stdout'))) }}"
+          topics: "{{ qb3rt_health_topics }}"
+          result: "{{ qb3rt_health_topics_out.results | default([]) | map(attribute='stdout', default='skipped') | list }}"
 
     - name: Fail on orphans or silent topics
       ansible.builtin.assert:
