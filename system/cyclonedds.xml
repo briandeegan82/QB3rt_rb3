@@ -8,7 +8,7 @@
     <General>
       <Interfaces>
         <!-- rover link on ros_net_5G (192.168.0.0/24) -->
-        <NetworkInterface name="wlan0" priority="default" multicast="default"/>
+        <NetworkInterface name="${QB3RT_DDS_IFACE:-wlan0}" priority="default" multicast="default"/>
       </Interfaces>
       <AllowMulticast>false</AllowMulticast>
     </General>
@@ -25,7 +25,10 @@
              off); without it each node only announces to the remote peer and the
              local Nav2/SLAM/EKF graph never discovers itself. -->
         <Peer address="localhost"/>
-        <Peer address="192.168.0.101"/>
+        <!-- Laptop peer: per-network value from /etc/qb3rt/dds_peer (exported
+             as QB3RT_DDS_PEER by qb3rt-ros-env.sh, set by Ansible's
+             qb3rt_dds_peer); CycloneDDS expands ${VAR:-default}. -->
+        <Peer address="${QB3RT_DDS_PEER:-192.168.0.101}"/>
       </Peers>
     </Discovery>
     <Internal>

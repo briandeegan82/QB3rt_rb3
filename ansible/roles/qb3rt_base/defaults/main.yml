@@ -11,3 +11,8 @@ qb3rt_base_system_dir: "{{ role_path }}/../../../system"
 
 # Seed only if absent — stamp writes the real per-unit value here.
 qb3rt_base_default_domain_id: "0"
+
+# Laptop address CycloneDDS unicast-peers with (written to /etc/qb3rt/dds_peer).
+# Empty = keep the fleet default in cyclonedds.xml (192.168.0.101). Set it per
+# network in inventory group vars, e.g. [qb3rt_odd:vars] qb3rt_dds_peer=192.168.1.100
+qb3rt_dds_peer: ""
