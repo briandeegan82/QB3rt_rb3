@@ -1,0 +1,46 @@
+# Read-only stack health: running qb3rt-stack units, orphaned processes, and
+# whether the core topics are publishing. Safe to run any time.
+#
+#   ansible-playbook playbooks/stack-health.yml -l qb3rt-7
+#   ansible-playbook playbooks/stack-health.yml -e qb3rt_health_topics='["/scan","/odom"]'
+- name: QB3rt stack health
+  hosts: qb3rt_fleet
+  gather_facts: false
+  vars:
+    qb3rt_health_topics: ["/odom", "/imu/data", "/scan", "/odometry/filtered"]
+    qb3rt_health_settle: 20
+  tasks:
+    - name: Units and orphans
+      ansible.builtin.command: /usr/local/bin/qb3rt-status
+      register: qb3rt_health_status
+      changed_when: false
+      failed_when: false
+
+    - name: Wait for the stack to settle
+      ansible.builtin.pause:
+        seconds: "{{ qb3rt_health_settle }}"
+      when: "'unit:' in qb3rt_health_status.stdout"
+
+    - name: Check each topic delivers a message
+      ansible.builtin.shell: |
+        source /etc/profile.d/qb3rt-ros-env.sh
+        timeout 8 ros2 topic echo --once --no-arr {{ item }} >/dev/null 2>&1 && echo ok || echo silent
+      args:
+        executable: /bin/bash
+      loop: "{{ qb3rt_health_topics }}"
+      register: qb3rt_health_topics_out
+      changed_when: false
+      when: "'unit:' in qb3rt_health_status.stdout"
+
+    - name: Report
+      ansible.builtin.debug:
+        msg:
+          status: "{{ qb3rt_health_status.stdout_lines }}"
+          topics: "{{ dict(qb3rt_health_topics_out.results | default([]) | selectattr('stdout', 'defined') | map(attribute='item') | zip(qb3rt_health_topics_out.results | default([]) | selectattr('stdout', 'defined') | map(attribute='stdout'))) }}"
+
+    - name: Fail on orphans or silent topics
+      ansible.builtin.assert:
+        that:
+          - qb3rt_health_status.rc == 0
+          - qb3rt_health_topics_out.results | default([]) | selectattr('stdout', 'defined') | selectattr('stdout', 'equalto', 'silent') | list | length == 0
+        fail_msg: "orphaned processes or silent topics on {{ inventory_hostname }} (see Report)"
