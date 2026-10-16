@@ -63,13 +63,12 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_perception", default_value="false"),
             # When perception is on, run the camera in VIO mode (/oak/vio/odometry).
             DeclareLaunchArgument("enable_vio", default_value="true"),
-            # WORKAROUND: the RPLIDAR (CP2102N UART bridge) and the OAK-D share a
-            # USB hub. When the OAK-D boots it re-enumerates on USB and resets the
-            # hub, which drops the lidar's serial bridge and stops its motor. Delay
-            # the lidar start until the OAK-D has finished booting and the bus has
-            # settled so the lidar opens its port on a stable bus. Set to 0 once the
-            # lidar is on its own USB bus / a powered hub.
-            DeclareLaunchArgument("lidar_start_delay", default_value="20.0"),
+            # Seconds to hold the RPLIDAR start. Was 20 s as a workaround for the
+            # OAK-D re-enumerating and resetting the shared USB hub at boot; the
+            # OV9282 VIO path has no OAK-D, so it is 0 by default (rplidar_c1
+            # also respawns after a bus reset). Pass lidar_start_delay:=20.0 on a
+            # unit that still has the OAK-D on the lidar's hub.
+            DeclareLaunchArgument("lidar_start_delay", default_value="0.0"),
             # Hold slam_toolbox until ORB-SLAM3 VIO has finished calibrating
             # (latched /vio/ready from the pose relay), so it doesn't map the
             # start-up VIO init ritual. OFF by default here: lidar_slam standalone

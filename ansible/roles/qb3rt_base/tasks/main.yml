@@ -39,6 +39,14 @@
     mode: "0644"
   become: true
 
+- name: Set the laptop DDS peer for this unit's network
+  ansible.builtin.copy:
+    dest: /etc/qb3rt/dds_peer
+    content: "{{ qb3rt_dds_peer }}\n"
+    mode: "0644"
+  become: true
+  when: qb3rt_dds_peer | default('') | length > 0
+
 - name: Seed default domain_id (only if absent — stamp owns the real value)
   ansible.builtin.copy:
     dest: /etc/qb3rt/domain_id

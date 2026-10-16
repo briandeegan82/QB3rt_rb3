@@ -27,6 +27,11 @@ else
     export ROS_DOMAIN_ID=0
 fi
 
+# Laptop DDS peer for this unit's network (expanded inside cyclonedds.xml).
+if [ -r /etc/qb3rt/dds_peer ]; then
+    export QB3RT_DDS_PEER="$(cat /etc/qb3rt/dds_peer)"
+fi
+
 # CycloneDDS with the AGV unicast/large-message tuning.
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=file:///etc/qb3rt/cyclonedds.xml
