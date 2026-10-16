@@ -1,0 +1,11 @@
+#!/bin/bash
+# ExecStart for qb3rt-stack@.service: load the fleet ROS environment and exec
+# `ros2 launch` so it is the service's main PID (it receives KillSignal).
+set -eo pipefail
+profile="${1:?usage: qb3rt-stack-exec <launch-file-stem>}"
+# shellcheck disable=SC1091
+source /etc/profile.d/qb3rt-ros-env.sh
+set -u
+# QB3RT_LAUNCH_ARGS is word-split on purpose: name:=value pairs, no spaces.
+# shellcheck disable=SC2086
+exec ros2 launch QB3rt "${profile}.launch.py" ${QB3RT_LAUNCH_ARGS:-}

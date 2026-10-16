@@ -12,6 +12,7 @@
 #   wifi_powersave_off  35% loss / multi-second RTT if left on
 #   https_time_sync     RB3 has no RTC; a mid-run NTP step breaks the EKF
 #   ros2_demo_nodes     talker/listener lab deps + rmw-cyclonedds-cpp backfill
+#   qb3rt_stack         qb3rt-stack@.service + qb3rt-up/down/status
 #   agent_stack_deps    (second play, [qb3rt_agent] only) twist_mux et al.
 #
 # Whole fleet (only reaches whichever of ROS_NET_ODD/EVEN this laptop is
@@ -29,6 +30,7 @@
     - wifi_powersave_off
     - https_time_sync
     - ros2_demo_nodes
+    - qb3rt_stack
 
 # Agent-stack deps are deliberately a separate play so they stay opt-in via
 # the [qb3rt_agent] group rather than becoming fleet-wide by accident.

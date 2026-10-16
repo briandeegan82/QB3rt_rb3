@@ -1,0 +1,64 @@
+---
+# qb3rt_stack: run the ROS 2 stack as a systemd service (qb3rt-stack@.service)
+# with qb3rt-up / qb3rt-down / qb3rt-status, so an SSH drop no longer leaves
+# orphaned nodes holding the serial ports and camera.
+- name: Ensure /usr/local/lib/qb3rt exists
+  ansible.builtin.file:
+    path: /usr/local/lib/qb3rt
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Install stack helper scripts (service-internal)
+  ansible.builtin.copy:
+    src: "{{ qb3rt_stack_system_dir }}/bin/{{ item }}"
+    dest: "/usr/local/lib/qb3rt/{{ item }}"
+    mode: "{{ '0644' if item.endswith('.sh') else '0755' }}"
+  become: true
+  loop:
+    - qb3rt-common.sh
+    - qb3rt-stack-exec
+    - qb3rt-wait-net
+
+- name: Install qb3rt-up / qb3rt-down / qb3rt-status
+  ansible.builtin.copy:
+    src: "{{ qb3rt_stack_system_dir }}/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "0755"
+  become: true
+  loop:
+    - qb3rt-up
+    - qb3rt-down
+    - qb3rt-status
+
+- name: Install qb3rt-stack@.service
+  ansible.builtin.copy:
+    src: "{{ qb3rt_stack_system_dir }}/qb3rt-stack@.service"
+    dest: /etc/systemd/system/qb3rt-stack@.service
+    mode: "0644"
+  become: true
+  register: qb3rt_stack_unit
+
+- name: Reload systemd after a unit change
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+  when: qb3rt_stack_unit.changed
+
+- name: Enable the autostart profile
+  ansible.builtin.systemd:
+    name: "qb3rt-stack@{{ qb3rt_stack_autostart_profile }}.service"
+    enabled: true
+  become: true
+  when: qb3rt_stack_autostart_profile | length > 0
+
+- name: Warn when the running stack predates a unit change
+  ansible.builtin.command: /usr/local/bin/qb3rt-status
+  register: qb3rt_stack_status
+  changed_when: false
+  failed_when: false
+
+- name: Report stack state
+  ansible.builtin.debug:
+    msg: "{{ qb3rt_stack_status.stdout_lines }}"
+  when: qb3rt_stack_status.rc != 0 or 'unit:' in qb3rt_stack_status.stdout

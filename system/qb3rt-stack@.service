@@ -1,0 +1,43 @@
+# QB3rt ROS 2 stack as a systemd service. The instance name is the launch file
+# stem in the QB3rt package:
+#
+#   qb3rt-up full_stack enable_nav:=false     (preferred: stops others first)
+#   sudo systemctl start qb3rt-stack@odometry_bringup
+#   journalctl -u qb3rt-stack@full_stack -f
+#
+# Why a service: a `ros2 launch` in an SSH session gets SIGHUP when the link
+# drops, and launch only tears its children down on SIGINT/SIGTERM, so the
+# nodes were left running as orphans holding /dev/wave_rover, /dev/rplidar and
+# the camera. Here the whole process tree lives in one cgroup that systemd
+# owns: stop sends SIGINT to `ros2 launch` (its normal Ctrl-C shutdown,
+# SIGINT -> SIGTERM -> SIGKILL per child) and SIGKILLs whatever is still in
+# the cgroup after TimeoutStopSec.
+[Unit]
+Description=QB3rt ROS 2 stack (%i.launch.py)
+Wants=network-online.target
+After=network-online.target sensor-service.service
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=ubuntu
+Group=ubuntu
+# Fleet-wide and per-profile launch arguments (QB3RT_LAUNCH_ARGS=...).
+# /run/qb3rt/stack-%i.env is written by qb3rt-up for one-off arguments.
+EnvironmentFile=-/etc/qb3rt/stack.env
+EnvironmentFile=-/etc/qb3rt/stack-%i.env
+EnvironmentFile=-/run/qb3rt/stack-%i.env
+Environment=PYTHONUNBUFFERED=1
+Environment=RCUTILS_COLORIZED_OUTPUT=0
+ExecStartPre=/usr/local/lib/qb3rt/qb3rt-wait-net
+ExecStart=/usr/local/lib/qb3rt/qb3rt-stack-exec %i
+KillMode=mixed
+KillSignal=SIGINT
+TimeoutStartSec=60
+TimeoutStopSec=25
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,50 @@
+#!/bin/bash
+# Stop the QB3rt stack.
+#
+#   qb3rt-down           stop qb3rt-stack@* and the probe units (clean SIGINT)
+#   qb3rt-down --force   also reap orphaned stack processes left by SSH-run
+#                        `ros2 launch` sessions: SIGINT, then SIGTERM, then
+#                        SIGKILL, a few seconds apart
+set -u
+# shellcheck source=qb3rt-common.sh
+source /usr/local/lib/qb3rt/qb3rt-common.sh
+
+force=0
+case "${1:-}" in
+    --force|-f) force=1 ;;
+    "") ;;
+    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+esac
+
+mapfile -t units < <(qb3rt_active_units)
+if [ "${#units[@]}" -gt 0 ]; then
+    echo "stopping: ${units[*]}"
+    qb3rt_sudo systemctl stop "${units[@]}"
+fi
+
+[ "$force" -eq 1 ] || {
+    mapfile -t strays < <(qb3rt_stray_pids)
+    [ "${#strays[@]}" -eq 0 ] || echo "note: ${#strays[@]} stack process(es) outside systemd; run qb3rt-down --force to reap them" >&2
+    exit 0
+}
+
+for sig in INT TERM KILL; do
+    mapfile -t strays < <(qb3rt_stray_pids)
+    [ "${#strays[@]}" -eq 0 ] && break
+    echo "SIG$sig -> ${#strays[@]} stray process(es)"
+    qb3rt_sudo kill "-$sig" "${strays[@]}" 2>/dev/null
+    for _ in 1 2 3 4 5; do
+        sleep 1
+        [ -z "$(qb3rt_stray_pids)" ] && break
+    done
+done
+
+left=$(qb3rt_stray_pids)
+if [ -n "$left" ]; then
+    echo "still running after SIGKILL (D state?):" >&2
+    # shellcheck disable=SC2086
+    ps -o pid,stat,cmd -p $left >&2
+    exit 1
+fi
+echo "stack stopped"
