@@ -20,6 +20,7 @@ Run standalone:
 import time
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
     QoSProfile,
@@ -67,7 +68,7 @@ def main(args=None):
     try:
         while rclpy.ok() and not node.ready and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.2)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         if node.ready:
@@ -78,8 +79,7 @@ def main(args=None):
                 f"(slam_toolbox will start without waiting for VIO)."
             )
         node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        rclpy.try_shutdown()
     # Exit 0 either way: OnProcessExit fires regardless, and a nonzero code
     # would look like a launch failure.
     return 0
