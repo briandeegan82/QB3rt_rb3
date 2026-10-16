@@ -1,4 +1,3 @@
-import os
 
 import yaml
 from launch import LaunchDescription

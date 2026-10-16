@@ -1,0 +1,7 @@
+extend-exclude = ["legacy_qirp"]
+
+[lint]
+select = ["E", "F", "W"]
+# Long lines / single-letter math names / late imports are house style in the
+# launch files and probes; F841 left as warnings-only for exploratory scripts.
+ignore = ["E501", "E741", "E402", "F841"]

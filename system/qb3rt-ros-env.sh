@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # QB3rt ROS environment — installed to /etc/profile.d/qb3rt-ros-env.sh by
 # reference/20_fleet_config.sh. Sourced by login shells on every RB3.
 #

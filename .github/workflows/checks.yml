@@ -1,0 +1,33 @@
+name: checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.6.9 shellcheck-py==0.10.0.1 ansible-core==2.17.5
+      - name: ruff
+        run: ruff check .
+      - name: shellcheck (errors)
+        run: shellcheck -S error $(git ls-files '*.sh' 'system/bin/*' | grep -v legacy_qirp)
+      - name: ansible syntax-check
+        working-directory: ansible
+        run: |
+          ansible-galaxy collection install ansible.posix
+          for p in playbooks/*.yml; do ansible-playbook --syntax-check "$p"; done
+
+  launch-files:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: build every LaunchDescription
+        shell: bash
+        run: source /opt/ros/jazzy/setup.bash && python3 tests/check_launch_files.py
