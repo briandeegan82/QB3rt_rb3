@@ -127,9 +127,9 @@ ansible-playbook playbooks/agent-stack-deps.yml
 
 ## Test run against one unit
 
-`inventory/hosts.ini` currently has exactly one host, `qb3rt-2`, mirroring
-`units/2.conf`. This is intentionally a test population of one before this
-goes fleet-wide.
+`inventory/hosts.ini` lists the whole fleet (`qb3rt_odd` / `qb3rt_even`, one
+per network). Limit any run that changes state to one unit first, e.g.
+`-l qb3rt-7`.
 
 ```bash
 cd ansible
@@ -149,3 +149,17 @@ Once `qb3rt-2` looks good, add the other units to
 `[qb3rt_time_sync_test]` in `inventory/hosts.ini` (or a new group) using
 each unit's `SSH_HOST`/`STATIC_IP` from `units/<id>.conf`, then re-run with
 `-l <group_or_host>` to control blast radius.
+
+## Deploy + health check
+
+```bash
+ansible-playbook playbooks/deploy.yml -l qb3rt-7                                      # stop, sync, leave stopped
+ansible-playbook playbooks/deploy.yml -l qb3rt_odd -e qb3rt_restart_profile=full_stack  # stop, sync, restart, check
+ansible-playbook playbooks/stack-health.yml -l qb3rt-7                                # read-only: units, orphans, topics
+```
+
+`deploy.yml` wraps `deploy/update_project.sh` (one copy of the sync logic) and
+adds the lifecycle around it: `qb3rt-down --force` before files change, then
+`qb3rt-up <profile>` and `stack-health.yml` when a restart profile is given.
+The convention probe now always stops its `qb3rt-probe-*` units at the end,
+even when a task fails.

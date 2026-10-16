@@ -1,0 +1,38 @@
+# Deploy the QB3rt project payload to units and (optionally) restart the stack.
+# Wraps deploy/update_project.sh so there is one copy of the sync logic; adds
+# the lifecycle the script leaves to the operator: stop before sync, restart,
+# then a health check.
+#
+#   ansible-playbook playbooks/deploy.yml -l qb3rt-7
+#   ansible-playbook playbooks/deploy.yml -l qb3rt_odd -e qb3rt_restart_profile=odometry_bringup
+#
+# Without qb3rt_restart_profile a running stack is stopped (so no process runs
+# a half-old, half-new tree) and left stopped.
+- name: Deploy QB3rt project payload
+  hosts: qb3rt_fleet
+  gather_facts: false
+  serial: 4
+  vars:
+    qb3rt_restart_profile: ""
+  tasks:
+    - name: Stop the stack before replacing its files
+      ansible.builtin.command: /usr/local/bin/qb3rt-down --force
+      register: qb3rt_deploy_down
+      changed_when: "'stopping' in qb3rt_deploy_down.stdout or 'SIG' in qb3rt_deploy_down.stdout"
+      failed_when: false
+
+    - name: Sync the payload (deploy/update_project.sh)
+      ansible.builtin.command: >-
+        {{ playbook_dir }}/../../deploy/update_project.sh
+        --host {{ ansible_user | default('ubuntu') }}@{{ ansible_host | default(inventory_hostname) }}
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Restart the stack
+      ansible.builtin.command: "/usr/local/bin/qb3rt-up {{ qb3rt_restart_profile }}"
+      when: qb3rt_restart_profile | length > 0
+      changed_when: true
+
+- name: Health check
+  ansible.builtin.import_playbook: stack-health.yml
+  when: qb3rt_restart_profile | default('') | length > 0

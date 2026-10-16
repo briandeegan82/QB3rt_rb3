@@ -16,7 +16,12 @@
   when: "'en_us.utf8' not in (qb3rt_base_locales.stdout | lower | replace('-', ''))"
 
 - name: Set default locale
-  ansible.builtin.command: update-locale LANG=en_US.UTF-8
+  ansible.builtin.lineinfile:
+    path: /etc/default/locale
+    regexp: '^LANG='
+    line: LANG=en_US.UTF-8
+    create: true
+    mode: "0644"
   become: true
 
 # --- DDS config + domain seed ------------------------------------------------
@@ -77,8 +82,13 @@
 # Ubuntu/cloud-init ships 'ubuntu' with an expired password, which breaks
 # non-interactive SSH — i.e. stamp/deploy/Ansible itself.
 - name: Clear forced password change on ubuntu
-  ansible.builtin.command: chage -d 20000 -M -1 ubuntu
+  ansible.builtin.shell: |
+    if LC_ALL=C chage -l ubuntu | grep -Eq 'must be changed|^Password expires[[:space:]]*:[[:space:]]*[^n]'; then
+      chage -d 20000 -M -1 ubuntu && echo changed
+    fi
   become: true
+  register: qb3rt_base_chage
+  changed_when: "'changed' in qb3rt_base_chage.stdout"
 
 - name: Install cloud-init drop-in stopping password re-expiry
   ansible.builtin.copy:

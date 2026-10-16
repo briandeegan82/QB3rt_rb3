@@ -15,108 +15,119 @@
   gather_facts: false
   serial: 1          # one robot at a time — it moves and needs watching
   tasks:
-    - name: Operator notice — robot will drive ~0.2 m and spin twice
-      ansible.builtin.pause:
-        prompt: >-
-          Put {{ inventory_hostname }} on the floor with ~1 m clear in every
-          direction. You will also need a tall object (box/tripod) to place at
-          its nose mid-probe. Press ENTER to begin.
+    - name: Probe (probe units are always stopped afterwards)
+      block:
+        - name: Operator notice — robot will drive ~0.2 m and spin twice
+          ansible.builtin.pause:
+            prompt: >-
+              Put {{ inventory_hostname }} on the floor with ~1 m clear in every
+              direction. You will also need a tall object (box/tripod) to place at
+              its nose mid-probe. Press ENTER to begin.
 
-    - name: Install the latest probe script (self-contained — never stale)
-      ansible.builtin.copy:
-        src: ../roles/qb3rt_base/files/qb3rt-convention-probe.py
-        dest: /usr/local/sbin/qb3rt-convention-probe
-        mode: "0755"
-      become: true
+        - name: Install the latest probe script (self-contained — never stale)
+          ansible.builtin.copy:
+            src: ../roles/qb3rt_base/files/qb3rt-convention-probe.py
+            dest: /usr/local/sbin/qb3rt-convention-probe
+            mode: "0755"
+          become: true
 
-    - name: Ensure base stack is running (bridge + IMU)
-      # systemd-run, not nohup/setsid: sshd's cgroup teardown kills the whole
-      # session slice on disconnect (Ubuntu 24.04 socket-activated sshd), so
-      # even setsid'd children die. A transient service lives outside the
-      # session entirely.
-      ansible.builtin.shell: |
-        source /etc/profile
-        # Check the ROS node, not the process: `pgrep -f waverover_bridge`
-        # self-matches the cmdline of this very shell and would exit 0
-        # having launched nothing. HOME=/root for the service: systemd-run
-        # runs with an empty environment and ros2 launch dies on
-        # rcutils_expand_user (no ~/.ros logging dir) without it.
-        systemctl is-active --quiet qb3rt-probe-stack.service && \
-          ros2 node list 2>/dev/null | grep -qx /waverover_bridge && exit 0
-        systemd-run --unit=qb3rt-probe-stack --collect \
-          --setenv=HOME=/root \
-          bash -lc "exec ros2 launch QB3rt odometry.launch.py enable_base_driver:=true" \
-          > /tmp/probe_stack.log 2>&1
-        sleep 15
-        ros2 node list 2>/dev/null | grep -qx /waverover_bridge
-      become: true       # systemd-run system service survives session teardown
-      args:
-        executable: /bin/bash
+        - name: Ensure base stack is running (bridge + IMU)
+          # systemd-run, not nohup/setsid: sshd's cgroup teardown kills the whole
+          # session slice on disconnect (Ubuntu 24.04 socket-activated sshd), so
+          # even setsid'd children die. A transient service lives outside the
+          # session entirely.
+          ansible.builtin.shell: |
+            source /etc/profile
+            # Check the ROS node, not the process: `pgrep -f waverover_bridge`
+            # self-matches the cmdline of this very shell and would exit 0
+            # having launched nothing. HOME=/root for the service: systemd-run
+            # runs with an empty environment and ros2 launch dies on
+            # rcutils_expand_user (no ~/.ros logging dir) without it.
+            systemctl is-active --quiet qb3rt-probe-stack.service && \
+              ros2 node list 2>/dev/null | grep -qx /waverover_bridge && exit 0
+            systemd-run --unit=qb3rt-probe-stack --collect \
+              --setenv=HOME=/root \
+              bash -lc "exec ros2 launch QB3rt odometry.launch.py enable_base_driver:=true" \
+              > /tmp/probe_stack.log 2>&1
+            sleep 15
+            ros2 node list 2>/dev/null | grep -qx /waverover_bridge
+          become: true       # systemd-run system service survives session teardown
+          args:
+            executable: /bin/bash
 
-    # The qrb IMU composable component can silently fail to load into
-    # imu_container (seen on qb3rt-10 and qb3rt-12): the container runs but
-    # /imu/data never publishes. Detect and load it manually.
-    - name: Ensure the IMU component actually publishes /imu/data
-      ansible.builtin.shell: |
-        source /etc/profile
-        timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average && exit 0
-        # The container takes a few seconds to register on DDS after launch —
-        # wait for it before attempting the component load.
-        for i in $(seq 1 30); do
-          ros2 node list 2>/dev/null | grep -qx /imu_container && break
-          sleep 2
-        done
-        ros2 component load /imu_container qrb_ros_imu qrb_ros::imu::ImuComponent \
-          --node-name imu --remap imu:=/imu/data
-        sleep 4
-        timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average
-      become: false
-      args:
-        executable: /bin/bash
+        # The qrb IMU composable component can silently fail to load into
+        # imu_container (seen on qb3rt-10 and qb3rt-12): the container runs but
+        # /imu/data never publishes. Detect and load it manually.
+        - name: Ensure the IMU component actually publishes /imu/data
+          ansible.builtin.shell: |
+            source /etc/profile
+            timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average && exit 0
+            # The container takes a few seconds to register on DDS after launch —
+            # wait for it before attempting the component load.
+            for i in $(seq 1 30); do
+              ros2 node list 2>/dev/null | grep -qx /imu_container && break
+              sleep 2
+            done
+            ros2 component load /imu_container qrb_ros_imu qrb_ros::imu::ImuComponent \
+              --node-name imu --remap imu:=/imu/data
+            sleep 4
+            timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average
+          become: false
+          args:
+            executable: /bin/bash
 
-    - name: Ensure RPLIDAR is publishing /scan
-      ansible.builtin.shell: |
-        source /etc/profile
-        timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average && exit 0
-        systemd-run --unit=qb3rt-probe-lidar --collect \
-          --setenv=HOME=/root \
-          bash -lc "exec ros2 launch QB3rt rplidar_c1.launch.py" \
-          > /tmp/probe_lidar.log 2>&1
-        sleep 8
-        timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average
-      become: true       # same transient-service reasoning as the base stack
-      args:
-        executable: /bin/bash
+        - name: Ensure RPLIDAR is publishing /scan
+          ansible.builtin.shell: |
+            source /etc/profile
+            timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average && exit 0
+            systemd-run --unit=qb3rt-probe-lidar --collect \
+              --setenv=HOME=/root \
+              bash -lc "exec ros2 launch QB3rt rplidar_c1.launch.py" \
+              > /tmp/probe_lidar.log 2>&1
+            sleep 8
+            timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average
+          become: true       # same transient-service reasoning as the base stack
+          args:
+            executable: /bin/bash
 
-    - name: Place calibration object at the nose
-      ansible.builtin.pause:
-        prompt: >-
-          Now place a tall object ~0.5 m in front of {{ inventory_hostname }}'s
-          NOSE (the camera-facing end). Press ENTER when placed.
+        - name: Place calibration object at the nose
+          ansible.builtin.pause:
+            prompt: >-
+              Now place a tall object ~0.5 m in front of {{ inventory_hostname }}'s
+              NOSE (the camera-facing end). Press ENTER when placed.
 
-    - name: Run the convention probe (drives wheels, reads IMU + scan)
-      # become + plain command = bare root env: no /etc/profile, so rclpy is
-      # unimportable and the probe dies silently (failed_when:false masks it).
-      # bash -lc loads the root login profile incl. the ROS env.
-      ansible.builtin.command: bash -lc 'qb3rt-convention-probe --yes'
-      become: true
-      register: probe_out
-      failed_when: false
-      changed_when: true
+        - name: Run the convention probe (drives wheels, reads IMU + scan)
+          # become + plain command = bare root env: no /etc/profile, so rclpy is
+          # unimportable and the probe dies silently (failed_when:false masks it).
+          # bash -lc loads the root login profile incl. the ROS env.
+          ansible.builtin.command: bash -lc 'qb3rt-convention-probe --yes'
+          become: true
+          register: probe_out
+          failed_when: false
+          changed_when: true
 
-    - name: Show probe output
-      ansible.builtin.debug: var=probe_out.stdout_lines
+        - name: Show probe output
+          ansible.builtin.debug: var=probe_out.stdout_lines
 
-    - name: Stop any residual stack motion
-      ansible.builtin.command: >-
-        bash -c 'source /etc/profile &&
-               ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{}" --once'
-      failed_when: false
-      changed_when: false
+        - name: Stop any residual stack motion
+          ansible.builtin.command: >-
+            bash -c 'source /etc/profile &&
+                   ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{}" --once'
+          failed_when: false
+          changed_when: false
 
-    - name: Fetch measured conventions back to the control host
-      ansible.builtin.fetch:
-        src: /etc/qb3rt/unit_conventions.yaml
-        dest: "{{ playbook_dir }}/../convention-results/{{ inventory_hostname }}.yaml"
-        flat: true
-      failed_when: false
+        - name: Fetch measured conventions back to the control host
+          ansible.builtin.fetch:
+            src: /etc/qb3rt/unit_conventions.yaml
+            dest: "{{ playbook_dir }}/../convention-results/{{ inventory_hostname }}.yaml"
+            flat: true
+          failed_when: false
+
+      # Always tear the probe's systemd-run units down — they exist precisely
+      # to survive the SSH session, so nothing else would ever stop them.
+      always:
+        - name: Stop the probe's transient stack units
+          ansible.builtin.command: systemctl stop qb3rt-probe-stack.service qb3rt-probe-lidar.service
+          become: true
+          failed_when: false
+          changed_when: false
