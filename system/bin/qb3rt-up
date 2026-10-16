@@ -1,0 +1,32 @@
+#!/bin/bash
+# Start one QB3rt stack profile as a systemd service, stopping any other
+# profile and reaping orphans first (two stacks fight over the serial ports).
+#
+#   qb3rt-up full_stack                      start (default profile: full_stack)
+#   qb3rt-up full_stack enable_nav:=false    one-off launch arguments
+#   qb3rt-up -f odometry_bringup             start, then follow the journal
+#
+# Persistent per-profile arguments: QB3RT_LAUNCH_ARGS=... in
+# /etc/qb3rt/stack-<profile>.env (fleet-wide: /etc/qb3rt/stack.env).
+set -euo pipefail
+# shellcheck source=qb3rt-common.sh
+source /usr/local/lib/qb3rt/qb3rt-common.sh
+
+follow=0
+if [ "${1:-}" = "-f" ] || [ "${1:-}" = "--follow" ]; then follow=1; shift; fi
+case "${1:-}" in -h|--help) sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 0 ;; esac
+profile="${1:-full_stack}"; shift || true
+profile="${profile%.launch.py}"
+
+share=/opt/qb3rt/install/share/QB3rt/launch
+[ -f "$share/$profile.launch.py" ] || { echo "no launch file $share/$profile.launch.py" >&2; exit 2; }
+
+/usr/local/bin/qb3rt-down --force
+
+qb3rt_sudo mkdir -p /run/qb3rt
+printf 'QB3RT_LAUNCH_ARGS=%s\n' "$*" | qb3rt_sudo tee "/run/qb3rt/stack-$profile.env" >/dev/null
+qb3rt_sudo systemctl reset-failed "qb3rt-stack@$profile.service" 2>/dev/null || true
+qb3rt_sudo systemctl start "qb3rt-stack@$profile.service"
+echo "started qb3rt-stack@$profile${*:+ ($*)}; logs: journalctl -u qb3rt-stack@$profile -f"
+[ "$follow" -eq 1 ] && exec journalctl -u "qb3rt-stack@$profile" -f -n 50
+exit 0

@@ -1,0 +1,26 @@
+#!/bin/bash
+# Show which QB3rt stack units are running and any orphaned stack processes.
+# Exit status: 0 = no orphans, 1 = orphans found (see qb3rt-down --force).
+set -u
+# shellcheck source=qb3rt-common.sh
+source /usr/local/lib/qb3rt/qb3rt-common.sh
+
+mapfile -t units < <(qb3rt_active_units)
+if [ "${#units[@]}" -eq 0 ]; then
+    echo "units: none running"
+else
+    for u in "${units[@]}"; do
+        printf 'unit: %-40s %s (since %s)\n' "$u" \
+            "$(systemctl show -p ActiveState --value "$u")" \
+            "$(systemctl show -p ActiveEnterTimestamp --value "$u")"
+    done
+fi
+
+mapfile -t strays < <(qb3rt_stray_pids)
+if [ "${#strays[@]}" -eq 0 ]; then
+    echo "orphans: none"
+    exit 0
+fi
+echo "orphans: ${#strays[@]} stack process(es) outside systemd:"
+ps -o pid,user,etime,cmd -p "${strays[@]}" | cut -c1-160
+exit 1

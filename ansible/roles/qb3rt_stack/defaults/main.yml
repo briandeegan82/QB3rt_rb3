@@ -1,0 +1,6 @@
+---
+qb3rt_stack_system_dir: "{{ role_path }}/../../../system"
+# Profile (launch file stem) to start at boot, e.g. "odometry_bringup".
+# Empty = never autostart: full_stack needs the operator for the VIO init
+# ritual, so bring-up stays an explicit `qb3rt-up`.
+qb3rt_stack_autostart_profile: ""

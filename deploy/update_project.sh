@@ -118,4 +118,21 @@ if [ -d "$SYS" ]; then
     echo "  system configs refreshed"
 fi
 
-echo "Done. Relaunch the stack on the unit to pick up changes."
+# --- 4. stack service + qb3rt-up/down/status --------------------------------
+if [ -f "$SYS/qb3rt-stack@.service" ]; then
+    ssh "${SSHO[@]}" "$SSH_TARGET" "mkdir -p /tmp/qb3rt-stack"
+    rsync -z "$SYS/qb3rt-stack@.service" "$SYS"/bin/qb3rt-* "$SSH_TARGET:/tmp/qb3rt-stack/"
+    ssh "${SSHO[@]}" "$SSH_TARGET" 'sudo sh -c "
+        mkdir -p /usr/local/lib/qb3rt &&
+        install -m 0644 /tmp/qb3rt-stack/qb3rt-common.sh /usr/local/lib/qb3rt/ &&
+        install -m 0755 /tmp/qb3rt-stack/qb3rt-stack-exec /tmp/qb3rt-stack/qb3rt-wait-net /usr/local/lib/qb3rt/ &&
+        install -m 0755 /tmp/qb3rt-stack/qb3rt-up /tmp/qb3rt-stack/qb3rt-down /tmp/qb3rt-stack/qb3rt-status /usr/local/bin/ &&
+        install -m 0644 /tmp/qb3rt-stack/qb3rt-stack@.service /etc/systemd/system/ &&
+        systemctl daemon-reload" && rm -rf /tmp/qb3rt-stack'
+    echo "  stack service + qb3rt-up/down/status installed"
+fi
+
+# The running stack still has the old files loaded; say so instead of
+# leaving a half-old, half-new process tree to be discovered later.
+ssh "${SSHO[@]}" "$SSH_TARGET" "/usr/local/bin/qb3rt-status" || true
+echo "Done. Restart the stack to pick up changes: ssh $SSH_TARGET qb3rt-up <profile>"

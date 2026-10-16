@@ -37,6 +37,24 @@ RViz so students can watch the map and send goals over Wi‑Fi.
 
 ---
 
+## Running the stack (systemd)
+
+Run the stack as a service so an SSH drop can't orphan nodes (installed by
+`ansible/playbooks/base-config.yml` and `deploy/update_project.sh`):
+
+```bash
+qb3rt-up full_stack enable_nav:=false   # stops other profiles + orphans first
+qb3rt-up -f odometry_bringup            # start and follow the journal
+qb3rt-status                            # running units + orphaned processes
+qb3rt-down                              # clean stop (SIGINT to ros2 launch)
+qb3rt-down --force                      # also reap orphans from old SSH launches
+journalctl -u qb3rt-stack@full_stack -f
+```
+
+The profile is any launch file stem in the QB3rt package. Persistent launch
+arguments go in `/etc/qb3rt/stack-<profile>.env` as `QB3RT_LAUNCH_ARGS=...`.
+Nothing autostarts unless `qb3rt_stack_autostart_profile` is set in Ansible.
+
 ## Hardware (per robot)
 
 - WAVE ROVER skid-steer chassis (open-loop drive; cannot pivot in place)

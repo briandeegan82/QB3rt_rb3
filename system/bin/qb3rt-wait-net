@@ -1,0 +1,12 @@
+#!/bin/bash
+# ExecStartPre for qb3rt-stack@.service: wait for the DDS interface to have an
+# IPv4 address. CycloneDDS binds the interface named in cyclonedds.xml at
+# participant creation; if it isn't up yet every node fails discovery.
+iface="${QB3RT_DDS_IFACE:-wlan0}"
+timeout="${QB3RT_NET_TIMEOUT:-45}"
+for _ in $(seq "$timeout"); do
+    ip -4 -o addr show dev "$iface" 2>/dev/null | grep -q inet && exit 0
+    sleep 1
+done
+echo "qb3rt-wait-net: $iface has no IPv4 address after ${timeout}s; starting anyway" >&2
+exit 0
