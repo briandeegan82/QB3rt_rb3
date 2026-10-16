@@ -57,6 +57,14 @@ fi
 [ -f "$CONF" ] || { echo "ERROR: no profile $CONF — use --id $NAME to create one" >&2; exit 1; }
 # shellcheck disable=SC1090
 source "$CONF"
+# Wi-Fi PSKs live in the untracked units/secrets.env, keyed by SSID
+# (WIFI_PSK_<SSID>, non-alphanumerics -> _). A PSK set in the profile wins.
+SECRETS="$UNITS_DIR/secrets.env"
+# shellcheck source=/dev/null
+[ -f "$SECRETS" ] && source "$SECRETS"
+psk_for() { local v="WIFI_PSK_${1//[^A-Za-z0-9_]/_}"; printf '%s' "${!v:-}"; }
+[ -n "${WIFI_SSID:-}" ] && WIFI_PSK="${WIFI_PSK:-$(psk_for "$WIFI_SSID")}"
+[ -n "${WIFI_RESERVE_SSID:-}" ] && WIFI_RESERVE_PSK="${WIFI_RESERVE_PSK:-$(psk_for "$WIFI_RESERVE_SSID")}"
 
 # --id fills the identity (conf may still supply serials/wifi/overrides).
 if [ -n "$ID" ]; then

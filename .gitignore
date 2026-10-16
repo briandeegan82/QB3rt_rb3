@@ -53,3 +53,6 @@ Thumbs.db
 /qb3rt-overlay.tar.gz
 /overlay_release.env
 
+
+# Wi-Fi PSKs (see units/secrets.env.example)
+units/secrets.env

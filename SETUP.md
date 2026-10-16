@@ -65,6 +65,11 @@ ansible-playbook playbooks/<name>.yml -l qb3rt_fleet   # or -l qb3rt_odd / qb3rt
 `udevadm info -q property -n /dev/ttyUSB*`; discover the Wi-Fi MAC with
 `ip link show wlan0 | grep ether` (over SSH).
 
+Wi-Fi PSKs are **not** kept in `units/*.conf`. Copy `units/secrets.env.example`
+to `units/secrets.env` (gitignored) and fill in `WIFI_PSK_<SSID>`;
+`stamp_unit.sh` looks each unit's PSK up by its `WIFI_SSID` /
+`WIFI_RESERVE_SSID`.
+
 ## Prerequisites
 
 - Fleet SSH key: `~/.ssh/qb3rt_fleet` (public half baked into the golden
