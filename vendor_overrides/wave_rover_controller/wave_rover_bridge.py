@@ -80,6 +80,7 @@ import math
 import os
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from geometry_msgs.msg import Quaternion, TransformStamped, Twist
 from nav_msgs.msg import Odometry
@@ -602,6 +603,16 @@ class CmdVelBridge(Node):
 
     # ── motor output ──────────────────────────────────────────────────────────
 
+    def stop_motors(self):
+        """Zero both wheels on exit. Runs after rclpy has shut down, so it
+        must not touch ROS; the firmware is not relied on to time out."""
+        cmd = '{"T":1,"L":0.000,"R":0.000}'
+        for _ in range(2):
+            try:
+                self.transport.send(cmd)
+            except self.transport.exceptions:
+                return
+
     def _send(self, left, right):
         left  = max(-1.0, min(1.0, left)) * self.motor_cmd_max
         right = max(-1.0, min(1.0, right)) * self.motor_cmd_max
@@ -617,16 +628,18 @@ class CmdVelBridge(Node):
 
 def main():
     rclpy.init()
-    node = CmdVelBridge()
+    node = None
     try:
+        node = CmdVelBridge()
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.transport.close()
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        if node is not None:
+            node.stop_motors()
+            node.transport.close()
+            node.destroy_node()
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':
