@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # QB3rt laptop ROS environment - source this in every shell that talks to the
 # robot:   source ~/qb3rt_laptop/qb3rt_env.sh
 #
