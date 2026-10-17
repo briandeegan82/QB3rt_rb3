@@ -30,11 +30,11 @@ need `base-config` + payload + probe to reach current standard.
 | 18 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 19 | odd  | yes | none | no | no | no | — | profile only, never stamped |
 | 20 | even | yes | none | no | no | no | — | profile only, never stamped |
-| 21 | odd  | yes | none | no | no | no | — | profile only, never stamped |
+| 21 | odd  | yes | pinned | done | done | no | — | stamped + base-config + payload; **needs floor probe** |
 | 22 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — board mounted backwards, conventions compensate |
 | 23 | odd  | yes | none | no | no | no | — | profile only, never stamped |
 | 24 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on carpet) |
-| 25 | odd  | yes | none | no | no | no | — | profile only, never stamped |
+| 25 | odd  | yes | pinned | done | done | no | — | stamped + base-config + payload; **needs floor probe** |
 | 26 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 27 | odd  | yes | none | no | no | no | — | profile only, never stamped |
 | 28 | even | yes | none | no | no | no | — | profile only, never stamped |
@@ -51,8 +51,11 @@ not a real unit.
 - **No WAN on ROS_NET_EVEN or ROS_NET_ODD** — `https-time-sync` fails on
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
-- **`drive_inverted` splits roughly evenly** (true: 17, 22, 24; false:
-  3, 7, 8, 10) — the eyeball check during the probe is not optional.
+- **`drive_inverted` is mostly `false`** (true: 17, 22, 24; false: 3, 5,
+  7, 8, 9, 10, 11, 13). Fleet default in `wave_rover_bridge.yaml` is now
+  `false`; the eyeball verify step in the probe is still not optional —
+  lidar delta has misread non-nose obstacles (unit 9) and IMU-x sign is
+  not fleet-consistent (unit 17).
 - **Missing `renesas_usb_fw.mem` = dead USB bus** — unit 9's image lacked
   the Renesas uPD720201 host-controller firmware; no ttyUSB devices at
   all. Fixed by installing the blob + PCI rebind; `qb3rt_base` now stages
