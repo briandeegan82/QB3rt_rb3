@@ -46,11 +46,15 @@ need `base-config` + payload + probe to reach current standard.
 
 ## Pending fleet actions
 
-- **Bulk payload redeploy** — units other than 42 still carry the old
-  isolated-layout OpenVINS tarball and the pre-flat-merge tree. Harmless
-  (nothing else runs ov_msckf), but run `update_project.sh --unit N`
-  fleet-wide when both nets are next online together so every unit gets
-  `launch/openvins.launch.py` + the flat package layout.
+- **Bulk payload redeploy (even done)** — flat-layout OpenVINS tarball +
+  `launch/openvins.launch.py` + SSID-aware DDS peer in `qb3rt-ros-env.sh`
+  deployed to all 8 live even units (8, 10, 12, 14, 16, 22, 24, 42) on
+  2026-10-17. Odd units still need it when they surface.
+- **wifi-ros-net-5 for odd units** — all 8 even units prefer ROS_NET_5
+  (priority 20, static IP, dedicated net fallback at 10). Odd units are
+  pending: unverified whether ROS_NET_5's fabric carries 192.168.1.0/24 —
+  test with the first odd unit that powers up; worst case they DHCP on
+  ROS_NET_5.
 
 ## Fleet-wide known issues
 
