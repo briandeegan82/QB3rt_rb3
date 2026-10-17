@@ -42,9 +42,7 @@ need `base-config` + payload + probe to reach current standard.
 | 30 | — | no | — | no | no | no | — | no profile |
 | 31 | — | no | — | no | no | no | — | no profile |
 | 32 | — | no | — | no | no | no | — | no profile |
-
-Stray: `units/42.conf` exists with no serials — probably a test artifact,
-not a real unit.
+| 42 | even | yes | pinned | done | done | no | — | golden sample / dev target (domain 42); serials captured + stamped, base-config + payload done; **needs floor probe** |
 
 ## Fleet-wide known issues
 
