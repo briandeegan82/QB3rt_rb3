@@ -1,0 +1,105 @@
+---
+# wifi-ros-net-5 — add ROS_NET_5 as every unit's PREFERRED Wi-Fi, keeping the
+# unit's dedicated net (ROS_NET_ODD / ROS_NET_EVEN) as the autoconnect
+# fallback. Nothing forces a roam: NM picks the higher-priority profile on
+# the next association/reboot, so this playbook is safe to run while shelled
+# in over the fallback net.
+#
+# Addressing mirrors the stamp legacy path: the unit keeps its STATIC IP on
+# ROS_NET_5 too (ROS_NET_5 serves both fleet subnets), gateway = <ip>.1.
+#
+# Priority order after this runs:
+#   ROS_NET_5        autoconnect yes, priority 20  (preferred)
+#   ROS_NET_ODD/EVEN autoconnect yes, priority 10  (this unit's dedicated net)
+#   everything else  unchanged (reserve net UoGPSK stays autoconnect no)
+#
+# DDS peer: pass -e ros_net_5_laptop_ip=<laptop IP on ROS_NET_5> to write
+# /etc/qb3rt/dds_peer_ros_net_5; qb3rt-ros-env.sh prefers it whenever the
+# unit is associated to ROS_NET_5. Skipped (with a warning) if unset.
+#
+# Run:
+#   ansible-playbook playbooks/wifi-ros-net-5.yml -l qb3rt-42
+#   ansible-playbook playbooks/wifi-ros-net-5.yml            # whole fleet
+#   ... -e ros_net_5_laptop_ip=192.168.5.100                 # + DDS peer file
+#   ... -e switch_now=true                                   # defer-switch ~5s
+- name: Prefer ROS_NET_5, keep dedicated net as fallback
+  hosts: qb3rt_fleet
+  gather_facts: false
+  serial: 4
+  vars:
+    ros_net_5_ssid: ROS_NET_5
+    ros_net_5_psk: >-
+      {{ lookup("file", playbook_dir + "/../../units/secrets.env").splitlines()
+         | select("match", "^WIFI_PSK_ROS_NET_5=") | first
+         | default("=", true) | split("=", 1) | last }}
+    dedicated_ssid: "{{ 'ROS_NET_ODD' if 'qb3rt_odd' in group_names else 'ROS_NET_EVEN' }}"
+    unit_ip: "{{ ansible_host }}"
+    unit_gw: "{{ ansible_host.split('.')[:3] | join('.') }}.1"
+    ros_net_5_laptop_ip: ""
+    switch_now: false
+  tasks:
+    - name: Fail fast if the ROS_NET_5 PSK is missing from units/secrets.env
+      ansible.builtin.fail:
+        msg: "WIFI_PSK_ROS_NET_5 is empty — set it in units/secrets.env"
+      when: ros_net_5_psk | length == 0
+
+    - name: Create the ROS_NET_5 profile if absent
+      become: true
+      ansible.builtin.command: >-
+        nmcli connection add type wifi con-name {{ ros_net_5_ssid }}
+        ifname "*" ssid {{ ros_net_5_ssid }}
+      register: con_add
+      changed_when: con_add.rc == 0
+      failed_when: false
+
+    - name: Pin ROS_NET_5 to the unit's static IP, preferred over the dedicated net
+      become: true
+      ansible.builtin.command: >-
+        nmcli connection modify {{ ros_net_5_ssid }}
+        wifi-sec.key-mgmt wpa-psk wifi-sec.psk {{ ros_net_5_psk }}
+        ipv4.method manual ipv4.addresses {{ unit_ip }}/24
+        ipv4.gateway {{ unit_gw }} ipv4.dns {{ unit_gw }}
+        connection.autoconnect yes connection.autoconnect-priority 20
+      changed_when: true
+
+    - name: Keep the dedicated net as an enabled fallback (priority 10)
+      become: true
+      ansible.builtin.command: >-
+        nmcli connection modify {{ dedicated_ssid }}
+        connection.autoconnect yes connection.autoconnect-priority 10
+      changed_when: true
+
+    - name: Write the ROS_NET_5 laptop DDS peer (when provided)
+      ansible.builtin.copy:
+        dest: /etc/qb3rt/dds_peer_ros_net_5
+        content: "{{ ros_net_5_laptop_ip }}\n"
+        mode: "0644"
+      when: ros_net_5_laptop_ip | length > 0
+      become: true
+
+    - name: Warn when no ROS_NET_5 laptop peer was given
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: ros_net_5_laptop_ip unset — DDS peer file
+          not written; re-run with -e ros_net_5_laptop_ip=... once the laptop
+          is on ROS_NET_5 (only matters if multicast is filtered there).
+      when: ros_net_5_laptop_ip | length == 0
+
+    - name: Show resulting Wi-Fi profile priorities + active link
+      become: true
+      ansible.builtin.command: >-
+        nmcli -t -f NAME,AUTOCONNECT,AUTOCONNECT-PRIORITY,ACTIVE connection show
+      register: nm_status
+      changed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        var: nm_status.stdout_lines
+
+    - name: Defer a switch to ROS_NET_5 ~5 s (kills this SSH session first)
+      become: true
+      ansible.builtin.command: >-
+        systemd-run --on-active=5 --unit=qb3rt-wifiswitch
+        nmcli connection up {{ ros_net_5_ssid }}
+      when: switch_now | bool
+      changed_when: true

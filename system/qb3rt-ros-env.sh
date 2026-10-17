@@ -28,7 +28,13 @@ else
 fi
 
 # Laptop DDS peer for this unit's network (expanded inside cyclonedds.xml).
-if [ -r /etc/qb3rt/dds_peer ]; then
+# Units roam between ROS_NET_5 (preferred) and their dedicated EVEN/ODD net
+# (fallback); the laptop peer differs per network, so pick by active SSID.
+active_wifi="$(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null \
+    | awk -F: '$2=="802-11-wireless"{print $1; exit}')"
+if [ "$active_wifi" = "ROS_NET_5" ] && [ -r /etc/qb3rt/dds_peer_ros_net_5 ]; then
+    export QB3RT_DDS_PEER="$(cat /etc/qb3rt/dds_peer_ros_net_5)"
+elif [ -r /etc/qb3rt/dds_peer ]; then
     export QB3RT_DDS_PEER="$(cat /etc/qb3rt/dds_peer)"
 fi
 
