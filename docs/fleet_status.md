@@ -21,11 +21,11 @@ need `base-config` + payload + probe to reach current standard.
 | 9  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (probe misclassified; lidar tracked a non-nose obstacle); shipped without `renesas_usb_fw.mem` — dead USB fixed |
 | 10 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — reference unit (SLAM/Nav2/YOLOE verified) |
 | 11 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — manual verify (battery issue, unit held): wheels forward under `false`; yaw from scan cluster at nose obstacle. Adapter serials re-captured (hardware swap) |
-| 12 | even | yes | pinned | partial (legacy) | legacy | no | — | has ov_msckf build + idle VIO stack; clock-skew prone; needs probe |
+| 12 | even | yes | pinned | done | done | no | — | base-config + payload done; **needs floor probe** (clock-skew prone — verify clock before driving) |
 | 13 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye; Wi-Fi radio was disabled (only dock ethernet); renesas fw was missing but ROM fallback kept USB alive |
-| 14 | even | yes | pinned | legacy | ? | no | — | stamped, symlinks live; needs current pipeline |
+| 14 | even | yes | pinned | done | done | no | — | base-config + payload done; **needs floor probe** |
 | 15 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
-| 16 | even | yes | pinned (today) | ~40% — dropped off net mid QAIRT staging | no | no | — | **offline** — rerun base-config when it reappears |
+| 16 | even | yes | pinned | done | done | no | — | base-config + payload done (QAIRT 2.49 fresh); **needs floor probe** |
 | 17 | odd  | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — IMU-x flipped vs body-x |
 | 18 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 19 | odd  | yes | none | no | no | no | — | profile only, never stamped |
