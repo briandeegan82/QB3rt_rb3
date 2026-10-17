@@ -25,9 +25,24 @@ Run on a unit:
 
 ```bash
 source /opt/qb3rt/install/setup.bash   # merged overlay
-ros2 run ov_msckf run_subscribe_msckf \
+# NOTE: the tarball extracts an *isolated* layout — install/ov_msckf/lib/...,
+# not install/lib/... — so ament never registers ov_msckf and `ros2 run`
+# fails. Run the binary directly with the three lib dirs on the path:
+export LD_LIBRARY_PATH=/opt/qb3rt/install/ov_msckf/lib:/opt/qb3rt/install/ov_core/lib:/opt/qb3rt/install/ov_init/lib:$LD_LIBRARY_PATH
+/opt/qb3rt/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf \
   /opt/qb3rt/install/share/QB3rt/config/openvins/estimator_config.yaml
 ```
+
+Odometry is published on `/odomimu` (plus `/poseimu`, `/pathimu`,
+`/points_msckf`, `/trackhist`) — NOT `/ov_msckf/*` as previously assumed.
+
+**Verified on qb3rt-42 (2026-10-17):** initialized on a hand carry, tracked
+a 10.6 m path, loop closure back at the start point was ~0.23 m (~2%),
+z drift 1 cm, cam-IMU timeoffset stable at 12 ms. The unit-12 runaway did
+not reproduce — its failure was likely the degenerate ceiling-facing init,
+not the config suspects above. Note: `qrb_ros_imu` emits IMU samples in
+duplicate-timestamp pairs at ~400 Hz — cosmetic "Zero DT" warnings, but
+worth filtering if it ever feeds a real consumer.
 
 Needs `/image_raw` (mono8) at ~30 Hz and `/imu/data` at ~200 Hz — e.g.
 `rb3_vio.launch.py` supplies the camera chain, `imu.launch.py` the IMU.
