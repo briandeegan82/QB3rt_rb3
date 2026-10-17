@@ -46,8 +46,11 @@ need `base-config` + payload + probe to reach current standard.
 
 ## Pending fleet actions
 
-- (none — all 17 provisioned units are at the current standard as of
-  2026-10-17)
+- **Compressed-camera republish payload** — `perception.launch.py` gained an
+  `image_transport republish` node (`/image_raw/compressed`, arg
+  `enable_compressed` default true) on 2026-10-17. Deployed and verified on
+  units 7 and 42 only; the other 15 provisioned units need a payload rerun
+  (`deploy/update_project.sh --host ubuntu@192.168.2.<N>`) when next online.
 
 ## Network layout (2026-10-17)
 

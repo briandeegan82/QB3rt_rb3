@@ -25,6 +25,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     bringup_base = LaunchConfiguration("bringup_base")
     enable_vio = LaunchConfiguration("enable_vio")
+    enable_compressed = LaunchConfiguration("enable_compressed")
     settings_file = LaunchConfiguration("settings_file")
     camera_info_file = LaunchConfiguration("camera_info_file")
     camera_id = LaunchConfiguration("camera_id")
@@ -50,6 +51,10 @@ def generate_launch_description():
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("bringup_base", default_value="true"),
             DeclareLaunchArgument("enable_vio", default_value="true"),
+            # JPEG-compressed twin of /image_raw for remote RViz/camera
+            # streaming — raw 720p mono8 is ~200 Mbps over Wi-Fi. Encoding is
+            # on-demand (image_transport publishers idle with no subscriber).
+            DeclareLaunchArgument("enable_compressed", default_value="true"),
             DeclareLaunchArgument("settings_file", default_value=default_settings),
             DeclareLaunchArgument("camera_info_file", default_value=default_camera_info),
             # OV9282 mono tracking camera (cameraId 1, native 1280x800).
@@ -147,6 +152,21 @@ def generate_launch_description():
                     "-p", ["use_sim_time:=", use_sim_time],
                 ],
                 condition=UnlessCondition(enable_vio),
+                output="screen",
+            ),
+            # Compressed twin of /image_raw for remote streaming (both VIO and
+            # plain-camera modes). Subscribe to /image_raw/compressed instead.
+            Node(
+                package="image_transport",
+                executable="republish",
+                name="image_raw_compressed_repub",
+                condition=IfCondition(enable_compressed),
+                arguments=["raw", "compressed"],
+                remappings=[
+                    ("in", "image_raw"),
+                    ("out/compressed", "image_raw/compressed"),
+                ],
+                parameters=[{"use_sim_time": use_sim_time}],
                 output="screen",
             ),
             # Static mount TF for the plain-camera case (VIO case publishes its own in

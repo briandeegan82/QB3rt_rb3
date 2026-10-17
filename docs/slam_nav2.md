@@ -112,21 +112,28 @@ Drive SLAM/Nav2 from the laptop over Wi-Fi. Everything below works on any
 provisioned unit on ROS_NET_5 — the only per-unit value is the domain ID.
 
 ```bash
-# on the unit: full onboard stack (base + odom + slam_toolbox + Nav2)
+# on the unit: full onboard stack (base + odom + slam_toolbox + Nav2 +
+# built-in compressed camera republish — see below)
 ssh ubuntu@192.168.2.<N> qb3rt-up full_stack
 
-# on the unit: compressed camera republish — /image_raw is 720p mono8 raw
-# (~200 Mbps), so republish JPEG-compressed for the Wi-Fi link
+# on the laptop: env is already Cyclone + matching domain; multicast works
+# on ROS_NET_5 so no peer file is needed laptop-side
+rviz2 -d rviz/fleet_demo.rviz
+```
+
+`/image_raw` is 720p mono8 raw (~200 Mbps) — too heavy for Wi-Fi. Since
+2026-10-17 `perception.launch.py` runs an `image_transport republish` node
+(`image_raw_compressed_repub`) that exposes `/image_raw/compressed`
+automatically in every camera profile; disable with `enable_compressed:=false`.
+On units running an older payload, the same republish can be started manually:
+
+```bash
 ssh ubuntu@192.168.2.<N> 'sudo systemd-run --unit=qb3rt-imgrepub \
   --setenv=HOME=/home/ubuntu --setenv=ROS_DOMAIN_ID=<N> \
   --setenv=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp bash -lc \
   "source /opt/qb3rt/install/setup.bash && \
    ros2 run image_transport republish raw compressed --ros-args \
    -r in:=image_raw -r out/compressed:=image_raw/compressed"'
-
-# on the laptop: env is already Cyclone + matching domain; multicast works
-# on ROS_NET_5 so no peer file is needed laptop-side
-rviz2 -d rviz/fleet_demo.rviz
 ```
 
 `rviz/fleet_demo.rviz` ships Grid/TF/Map/LaserScan/RobotModel/Odometry-trail,
@@ -143,8 +150,8 @@ ssh ubuntu@192.168.2.<N> 'mkdir -p ~/maps && \
   --ros-args -p map_subscribe_transient_local:=true'
 ```
 
-Teardown: `ssh ubuntu@192.168.2.<N> 'qb3rt-down; sudo systemctl stop qb3rt-imgrepub'`
-(the republisher is a transient unit and dies on reboot anyway).
+Teardown: `ssh ubuntu@192.168.2.<N> qb3rt-down` (also stop `qb3rt-imgrepub`
+if the manual republisher was used).
 
 Gotchas seen:
 
