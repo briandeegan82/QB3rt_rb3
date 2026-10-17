@@ -45,17 +45,30 @@ base-config, interactively:
 ansible-playbook playbooks/convention-probe.yml -l qb3rt-7
 ```
 
-The playbook pauses for you to floor the robot and place a calibration
-object at its nose, starts the base stack + lidar if needed, then runs the
-probe. It measures:
+The playbook first runs **`qb3rt-preflight`** — a raw-serial health check
+(no ROS) that kills every stale stack/bridge, verifies `/dev/wave_rover`
+and `/dev/rplidar` resolve and stay bound, and confirms the lidar answers
+`GET_INFO` and the ESP32 answers a reset banner. It fails fast on the
+failure modes that used to surface as "the robot didn't move" mid-probe.
 
-- **`drive_inverted`** — pulses `+linear.x` and integrates IMU accel; a
-  negative delta-v means the drivetrain's "forward" is the physical rear
-  (the qb3rt-7 signature: L/R swapped + polarity-reversed).
+Then it starts `qb3rt-stack@odometry` + `qb3rt-stack@rplidar_c1` (the
+systemd services — no transient `systemd-run` leftovers fighting over the
+serial port), pauses for you to floor the robot and place a calibration
+object at its nose, and runs the probe. It measures:
+
+- **`drive_inverted`** — pulses `+linear.x` and discriminates direction by
+  the nose obstacle's scan-range delta (IMU launch accel is fallback only;
+  IMU-x vs body-x sign is itself a per-unit convention, qb3rt-17).
 - **yaw convention** — `+angular.z` vs. gyro sign; a *negative* result can't
   be auto-fixed and flags the unit for manual wiring inspection.
 - **`lidar_yaw`** — locates the nose-placed obstacle in the raw scan; its
   angle reveals which way scan-zero physically points.
+
+Finally the playbook **verifies the result end-to-end**: it restarts the
+bridge under the written conventions, pulses `+x` again, and asks you to
+confirm — answering `b` flips `drive_inverted` and re-tests once. The
+fleet default in `wave_rover_bridge.yaml` is `false` (most chassis) — the
+conventions file overrides it per unit.
 
 Results land in **`/etc/qb3rt/unit_conventions.yaml`**, which
 `wave_rover_bridge.py` (`drive_inverted`) and `static_transforms.launch.py`
@@ -161,5 +174,5 @@ ansible-playbook playbooks/stack-health.yml -l qb3rt-7                          
 `deploy.yml` wraps `deploy/update_project.sh` (one copy of the sync logic) and
 adds the lifecycle around it: `qb3rt-down --force` before files change, then
 `qb3rt-up <profile>` and `stack-health.yml` when a restart profile is given.
-The convention probe now always stops its `qb3rt-probe-*` units at the end,
-even when a task fails.
+The convention probe always ends with `qb3rt-down --force`, even when a
+task fails.

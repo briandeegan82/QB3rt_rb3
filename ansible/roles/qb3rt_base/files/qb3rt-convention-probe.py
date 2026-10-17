@@ -94,7 +94,19 @@ class Probe(Node):
         return False
 
     def pulse(self, linear=0.0, angular=0.0, secs=1.0):
-        """Command a bounded twist; collect IMU samples during the pulse."""
+        """Command a bounded twist; collect IMU samples during the pulse.
+
+        Waits for a /cmd_vel subscriber FIRST: CycloneDDS takes 1-5 s to
+        match a fresh publisher, and messages published before the match
+        are silently dropped — the probe would then measure "no motion"
+        and misdiagnose a dead drivetrain (burned us on units 9/11/13)."""
+        t0 = time.time()
+        while self.pub.get_subscription_count() < 1:
+            if time.time() - t0 > 20:
+                print("ERROR: no /cmd_vel subscriber after 20 s — "
+                      "bridge not running (run qb3rt-preflight first)")
+                return []
+            rclpy.spin_once(self, timeout_sec=0.1)
         self.imu.clear()
         msg = Twist()
         msg.linear.x = linear
@@ -175,7 +187,29 @@ def probe_lidar(p):
     return best, None
 
 
+def drive_pulse_only():
+    """--drive-pulse mode: one bounded pulse, then exit. Used by the probe
+    playbook's verify step — the conventions file has just been written, the
+    bridge restarted under it, and the operator watches which way the robot
+    goes. Waits for the cmd_vel subscriber match so 'no movement' means
+    'bridge dead', never 'message dropped before discovery'."""
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--drive-pulse", action="store_true")
+    ap.add_argument("--linear", type=float, default=0.2)
+    ap.add_argument("--angular", type=float, default=0.0)
+    ap.add_argument("--secs", type=float, default=2.0)
+    a = ap.parse_args()
+    rclpy.init()
+    p = Probe()
+    p.pulse(linear=a.linear, angular=a.angular, secs=a.secs)
+    print(f"pulsed linear={a.linear} angular={a.angular} for {a.secs} s")
+    return 0
+
+
 def main():
+    if "--drive-pulse" in sys.argv:
+        return drive_pulse_only()
     rclpy.init()
     p = Probe()
     print("waiting for /imu/data and /scan ...")

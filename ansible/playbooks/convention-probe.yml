@@ -1,15 +1,19 @@
 ---
-# convention-probe — measure one unit's hardware conventions and stamp the
-# baseline into /etc/qb3rt/unit_conventions.yaml.
+# convention-probe — measure one unit's hardware conventions, stamp the
+# baseline into /etc/qb3rt/unit_conventions.yaml, then VERIFY it live.
 #
-# INTERACTIVE: the probe pulses the wheels (keep the floor clear) and pauses
-# for you to place a tall object at the robot's nose before the lidar check.
-# Run per unit, or a few at a time if you can watch each one:
+# Flow (INTERACTIVE — the robot drives; watch it):
+#   1. preflight   raw-serial health check + kill every stale ROS process
+#                  (fails fast on dead/flapping adapters, missing symlinks)
+#   2. stack       qb3rt-stack@odometry (bridge + IMU) + @rplidar_c1
+#   3. probe       bounded +x / +z pulses; lidar delta + IMU classify
+#                  drive_inverted; nearest-cluster angle gives lidar_yaw
+#   4. verify      bridge restarts under the written conventions, one +x
+#                  pulse, operator confirms; backward flips and re-tests
 #
-#   ansible-playbook playbooks/convention-probe.yml -l qb3rt-7
+# Run:  ansible-playbook playbooks/convention-probe.yml -l qb3rt-7
 #
-# Results are also fetched back into ./convention-results/<host>.yaml so the
-# inventory has a recorded baseline per unit.
+# Results are fetched back into ./convention-results/<host>.yaml.
 - name: Per-unit hardware convention probe
   hosts: qb3rt_fleet
   gather_facts: false
@@ -24,34 +28,45 @@
               direction. You will also need a tall object (box/tripod) to place at
               its nose mid-probe. Press ENTER to begin.
 
-        - name: Install the latest probe script (self-contained — never stale)
+        - name: Install probe + preflight scripts (self-contained — never stale)
           ansible.builtin.copy:
-            src: ../roles/qb3rt_base/files/qb3rt-convention-probe.py
-            dest: /usr/local/sbin/qb3rt-convention-probe
+            src: "../roles/qb3rt_base/files/{{ item.src }}"
+            dest: "/usr/local/sbin/{{ item.dest }}"
             mode: "0755"
           become: true
+          loop:
+            - { src: qb3rt-convention-probe.py, dest: qb3rt-convention-probe }
+            - { src: qb3rt-preflight.py,        dest: qb3rt-preflight }
 
-        - name: Ensure base stack is running (bridge + IMU)
-          # systemd-run, not nohup/setsid: sshd's cgroup teardown kills the whole
-          # session slice on disconnect (Ubuntu 24.04 socket-activated sshd), so
-          # even setsid'd children die. A transient service lives outside the
-          # session entirely.
+        - name: Hardware preflight (stops stale stacks; fails fast)
+          ansible.builtin.command: qb3rt-preflight
+          become: true
+          register: preflight_out
+
+        - name: Show preflight output
+          ansible.builtin.debug: var=preflight_out.stdout_lines
+
+        - name: Start odometry stack (bridge + IMU) as a systemd service
+          # qb3rt-up stops other stacks and reaps orphans first — the old
+          # systemd-run leftovers fought over /dev/wave_rover. The service
+          # runs as ubuntu with the fleet ROS env; stop sends SIGINT so
+          # launch tears its children down cleanly.
+          ansible.builtin.command: qb3rt-up odometry enable_base_driver:=true
+          become: false
+          changed_when: false
+
+        - name: Start lidar alongside (separate instance — qb3rt-up would stop odometry)
+          ansible.builtin.command: systemctl start qb3rt-stack@rplidar_c1
+          become: true
+
+        - name: Wait for the bridge node (up to 60 s)
           ansible.builtin.shell: |
             source /etc/profile
-            # Check the ROS node, not the process: `pgrep -f waverover_bridge`
-            # self-matches the cmdline of this very shell and would exit 0
-            # having launched nothing. HOME=/root for the service: systemd-run
-            # runs with an empty environment and ros2 launch dies on
-            # rcutils_expand_user (no ~/.ros logging dir) without it.
-            systemctl is-active --quiet qb3rt-probe-stack.service && \
+            for i in $(seq 1 30); do
               ros2 node list 2>/dev/null | grep -qx /waverover_bridge && exit 0
-            systemd-run --unit=qb3rt-probe-stack --collect \
-              --setenv=HOME=/root \
-              bash -lc "exec ros2 launch QB3rt odometry.launch.py enable_base_driver:=true" \
-              > /tmp/probe_stack.log 2>&1
-            sleep 15
-            ros2 node list 2>/dev/null | grep -qx /waverover_bridge
-          become: true       # systemd-run system service survives session teardown
+              sleep 2
+            done
+            echo "bridge node never appeared"; exit 1
           args:
             executable: /bin/bash
 
@@ -76,17 +91,12 @@
           args:
             executable: /bin/bash
 
-        - name: Ensure RPLIDAR is publishing /scan
+        - name: Wait for /scan (up to 30 s)
           ansible.builtin.shell: |
             source /etc/profile
             timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average && exit 0
-            systemd-run --unit=qb3rt-probe-lidar --collect \
-              --setenv=HOME=/root \
-              bash -lc "exec ros2 launch QB3rt rplidar_c1.launch.py" \
-              > /tmp/probe_lidar.log 2>&1
-            sleep 8
+            sleep 10
             timeout 8 ros2 topic hz /scan --window 10 2>/dev/null | grep -q average
-          become: true       # same transient-service reasoning as the base stack
           args:
             executable: /bin/bash
 
@@ -116,6 +126,71 @@
           failed_when: false
           changed_when: false
 
+        # --- verify under the just-written conventions ----------------------
+        - name: Restart bridge under the new conventions
+          ansible.builtin.command: systemctl restart qb3rt-stack@odometry
+          become: true
+
+        - name: Wait for bridge again (up to 60 s)
+          ansible.builtin.shell: |
+            source /etc/profile
+            for i in $(seq 1 30); do
+              ros2 node list 2>/dev/null | grep -qx /waverover_bridge && exit 0
+              sleep 2
+            done
+            exit 1
+          args:
+            executable: /bin/bash
+
+        - name: VERIFY — forward pulse under written drive_inverted (WATCH IT)
+          ansible.builtin.command: >-
+            bash -lc 'qb3rt-convention-probe --drive-pulse --linear 0.2 --secs 2.0'
+          become: true
+          register: verify_pulse
+          changed_when: true
+
+        - name: Operator confirm — did it drive TOWARD the camera nose?
+          ansible.builtin.pause:
+            prompt: >-
+              {{ inventory_hostname }} just pulsed. Did it move FORWARD
+              (toward the camera/lidar nose)? Type 'y' + ENTER if yes,
+              'b' + ENTER if it went BACKWARD, 'n' if it did not move.
+          register: verify_ans
+
+        - name: Backward — flip drive_inverted and re-test
+          when: "'b' in verify_ans.user_input | default('')"
+          block:
+            - name: Flip drive_inverted in the conventions file
+              ansible.builtin.shell: |
+                if grep -q '^drive_inverted: true' /etc/qb3rt/unit_conventions.yaml; then
+                  sed -i 's/^drive_inverted:.*/drive_inverted: false/' /etc/qb3rt/unit_conventions.yaml
+                else
+                  sed -i 's/^drive_inverted:.*/drive_inverted: true/' /etc/qb3rt/unit_conventions.yaml
+                fi
+                grep '^drive_inverted' /etc/qb3rt/unit_conventions.yaml
+              become: true
+              args:
+                executable: /bin/bash
+
+            - name: Restart bridge + re-pulse
+              ansible.builtin.shell: |
+                source /etc/profile
+                systemctl restart qb3rt-stack@odometry
+                for i in $(seq 1 30); do
+                  ros2 node list 2>/dev/null | grep -qx /waverover_bridge && break
+                  sleep 2
+                done
+                bash -lc 'qb3rt-convention-probe --drive-pulse --linear 0.2 --secs 2.0'
+              become: true
+              args:
+                executable: /bin/bash
+
+            - name: Operator re-confirm — forward now?
+              ansible.builtin.pause:
+                prompt: >-
+                  Flipped drive_inverted and re-pulsed. Did it move FORWARD
+                  this time? Type 'y' + ENTER to accept the flipped value.
+
         - name: Fetch measured conventions back to the control host
           ansible.builtin.fetch:
             src: /etc/qb3rt/unit_conventions.yaml
@@ -123,11 +198,11 @@
             flat: true
           failed_when: false
 
-      # Always tear the probe's systemd-run units down — they exist precisely
-      # to survive the SSH session, so nothing else would ever stop them.
+      # Always tear the probe's stack down — the services survive the SSH
+      # session by design, so nothing else would ever stop them.
       always:
-        - name: Stop the probe's transient stack units
-          ansible.builtin.command: systemctl stop qb3rt-probe-stack.service qb3rt-probe-lidar.service
+        - name: Stop all stack services
+          ansible.builtin.command: qb3rt-down --force
           become: true
           failed_when: false
           changed_when: false

@@ -83,14 +83,15 @@
     # fused VIO+IMU EKF.
     publish_tf: false
 
-    # TRUE on qb3rt-7 (2026-07): positive linear.x physically rolled toward the
-    # chassis REAR while +angular.z correctly yawed CCW (gyro-verified). That
-    # signature = L/R channels swapped AND polarity inverted — equivalent to
-    # the drivetrain's "forward" being the physical rear end. The bridge
-    # negates+swaps the wheel outputs, restoring REP-103 linear while leaving
-    # yaw untouched. Per-unit hardware quirk — verify direction on each unit
-    # before fleet-wide rollout; flip per-unit if any rover drives correctly.
-    drive_inverted: true
+    # Per-unit hardware quirk — TRUE on a minority of hand-assembled chassis
+    # (qb3rt-17, -22, -24 as of 2026-08): positive linear.x physically rolls
+    # toward the chassis REAR (L/R channels swapped AND polarity inverted).
+    # The bridge negates+swaps wheel outputs, restoring REP-103 linear while
+    # leaving yaw untouched. This is the fleet DEFAULT for unprobed units;
+    # each unit's measured value lives in /etc/qb3rt/unit_conventions.yaml
+    # (qb3rt-convention-probe) and overrides this at launch. Fleet tally:
+    # most units are FALSE — do not flip this back based on one unit.
+    drive_inverted: false
 
     # --- Tank-drive joystick (sensor_msgs/Joy) ---
     # Hold joy_deadman_button to take direct per-wheel control via the sticks.

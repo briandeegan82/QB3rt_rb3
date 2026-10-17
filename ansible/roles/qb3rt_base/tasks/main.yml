@@ -427,12 +427,15 @@
 # It writes /etc/qb3rt/unit_conventions.yaml, which the bridge (drive_inverted)
 # and static_transforms.launch.py (lidar_yaw) read at every startup — so the
 # measured baseline survives project redeploys and reflashes stay correct.
-- name: Install convention probe script
+- name: Install convention probe + preflight scripts
   ansible.builtin.copy:
-    src: qb3rt-convention-probe.py
-    dest: /usr/local/sbin/qb3rt-convention-probe
+    src: "{{ item }}"
+    dest: "/usr/local/sbin/{{ item | basename | regex_replace('\\.py$', '') }}"
     mode: "0755"
   become: true
+  loop:
+    - qb3rt-convention-probe.py
+    - qb3rt-preflight.py
 
 # --- ament registration sanity -------------------------------------------------
 # `ros2 launch QB3rt ...` needs the ament index marker under the install prefix.
