@@ -14,7 +14,7 @@ need `base-config` + payload + probe to reach current standard.
 | 2  | even | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
 | 3  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on its floor) |
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
-| 5  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
+| 5  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — verified by eye; rover adapter was flapping on USB (re-seated), renesas fw added, lidar rear-facing |
 | 6  | even | yes | pinned | ~95% — interrupted at QAIRT staging | no | no | — | rerun base-config to converge, then payload + probe |
 | 7  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (forward + CCW); original source of fleet `drive_inverted: true` default, but with current board mounting `false` is correct |
 | 8  | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** |
