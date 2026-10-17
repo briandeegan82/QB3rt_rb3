@@ -126,22 +126,30 @@ ansible-playbook playbooks/wifi-powersave-off.yml -l qb3rt_odd
 Adds ROS_NET_5 as every unit's **preferred** Wi-Fi while keeping the unit's
 dedicated net (ROS_NET_ODD/EVEN) as the autoconnect fallback:
 
-- `ROS_NET_5` profile pinned to the unit's static IP (`ansible_host`),
-  gateway `<ip>.1`, `autoconnect-priority 20`
-- dedicated net re-armed `autoconnect yes`, priority 10
+- `ROS_NET_5` profile pinned to `192.168.2.<unit#>` (derived from the
+  hostname — ROS_NET_5 only serves 192.168.2.0/24), gateway `192.168.2.1`,
+  `autoconnect-priority 20`; override with `-e ros_net_5_static_ip=<ip>` or
+  a per-host var (unit 1 uses `.2.101` since `.2.1` is the gateway)
+- dedicated net re-armed `autoconnect yes`, priority 10 — odd units keep
+  their `192.168.1.x` statics there (still L2-reachable; see the inventory
+  header for the laptop alias recipe)
 - nothing forces a roam — NM picks up ROS_NET_5 on the next association or
   reboot; `-e switch_now=true` schedules a deferred `nmcli connection up`
   ~5 s out (same trick as stamp's IP switch)
 - `-e ros_net_5_laptop_ip=<ip>` also writes `/etc/qb3rt/dds_peer_ros_net_5`;
   `qb3rt-ros-env.sh` prefers it whenever the unit is associated to ROS_NET_5
 - PSK comes from `units/secrets.env` (`WIFI_PSK_ROS_NET_5`), never the repo
+- idempotent: checks for an existing profile before `connection add` and
+  collapses same-name duplicates down to one before modifying
 
 ```bash
 ansible-playbook playbooks/wifi-ros-net-5.yml -l qb3rt-14   # one unit
 ansible-playbook playbooks/wifi-ros-net-5.yml               # fleet
 ```
 
-Deployed 2026-10-17 to even units 8, 10, 12, 16, 24, 42.
+Deployed 2026-10-17 fleet-wide; all 17 provisioned units (3, 5, 7, 8, 9, 10,
+11, 12, 13, 14, 16, 17, 21, 22, 24, 25, 42) are active on ROS_NET_5 at
+`192.168.2.<unit#>`.
 
 ### `agent_stack_deps`
 

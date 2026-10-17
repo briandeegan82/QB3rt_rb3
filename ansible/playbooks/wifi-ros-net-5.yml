@@ -5,8 +5,12 @@
 # the next association/reboot, so this playbook is safe to run while shelled
 # in over the fallback net.
 #
-# Addressing mirrors the stamp legacy path: the unit keeps its STATIC IP on
-# ROS_NET_5 too (ROS_NET_5 serves both fleet subnets), gateway = <ip>.1.
+# Addressing: ROS_NET_5 only serves 192.168.2.0/24, so every unit gets
+# 192.168.2.<unit number> there -- evens keep their usual address, odds
+# renumber (qb3rt-3 -> 192.168.2.3). Override with -e ros_net_5_static_ip=<ip>.
+# The dedicated-net fallback keeps its original static (.1.x on ODD still works
+# at L2 -- give a laptop on ODD a .1 alias via
+# `nmcli device modify wlp4s0 +ipv4.addresses 192.168.1.175/24` to reach it).
 #
 # Priority order after this runs:
 #   ROS_NET_5        autoconnect yes, priority 20  (preferred)
@@ -33,8 +37,10 @@
          | select("match", "^WIFI_PSK_ROS_NET_5=") | first
          | default("=", true) | split("=", 1) | last }}
     dedicated_ssid: "{{ 'ROS_NET_ODD' if 'qb3rt_odd' in group_names else 'ROS_NET_EVEN' }}"
-    unit_ip: "{{ ansible_host }}"
-    unit_gw: "{{ ansible_host.split('.')[:3] | join('.') }}.1"
+    unit_num: "{{ inventory_hostname | regex_search('[0-9]+$') }}"
+    ros_net_5_static_ip: ""
+    unit_ip: "{{ ros_net_5_static_ip if ros_net_5_static_ip | length > 0 else '192.168.2.' ~ unit_num }}"
+    unit_gw: "{{ unit_ip.split('.')[:3] | join('.') }}.1"
     ros_net_5_laptop_ip: ""
     switch_now: false
   tasks:
@@ -43,6 +49,12 @@
         msg: "WIFI_PSK_ROS_NET_5 is empty — set it in units/secrets.env"
       when: ros_net_5_psk | length == 0
 
+    - name: List existing ROS_NET_5 profiles (for add-if-absent + dedupe)
+      become: true
+      ansible.builtin.command: nmcli -t -f NAME,UUID connection show
+      register: ros5_profiles
+      changed_when: false
+
     - name: Create the ROS_NET_5 profile if absent
       become: true
       ansible.builtin.command: >-
@@ -50,9 +62,25 @@
         ifname "*" ssid {{ ros_net_5_ssid }}
       register: con_add
       changed_when: con_add.rc == 0
-      failed_when: false
+      failed_when: con_add.rc != 0
+      when: >-
+        ros5_profiles.stdout_lines
+        | select("match", "^" ~ ros_net_5_ssid ~ ":") | list | length == 0
 
-    - name: Pin ROS_NET_5 to the unit's static IP, preferred over the dedicated net
+    # nmcli `connection add`/`modify` by NAME is ambiguous once duplicates of
+    # the same con-name exist (they did, from earlier runs of this playbook).
+    # Collapse to a single ROS_NET_5 profile before modifying: keep the first
+    # listed UUID (or the just-added one), delete the rest.
+    - name: Collapse duplicate ROS_NET_5 profiles (keep first)
+      become: true
+      ansible.builtin.shell: >-
+        first=$(nmcli -t -f NAME,UUID connection show | awk -F: -v s="{{ ros_net_5_ssid }}" '$1==s{print $2; exit}');
+        nmcli -t -f NAME,UUID connection show | awk -F: -v s="{{ ros_net_5_ssid }}" -v keep="$first" '$1==s && $2!=keep{print $2}' | while read u; do nmcli connection delete "$u" && echo "deleted $u"; done;
+        true
+      register: ros5_dedupe
+      changed_when: ros5_dedupe.stdout != ""
+
+    - name: Pin ROS_NET_5 to 192.168.2.<unit#>, preferred over the dedicated net
       become: true
       ansible.builtin.command: >-
         nmcli connection modify {{ ros_net_5_ssid }}

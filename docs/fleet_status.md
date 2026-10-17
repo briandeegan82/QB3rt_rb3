@@ -46,15 +46,24 @@ need `base-config` + payload + probe to reach current standard.
 
 ## Pending fleet actions
 
-- **Bulk payload redeploy (even done)** — flat-layout OpenVINS tarball +
-  `launch/openvins.launch.py` + SSID-aware DDS peer in `qb3rt-ros-env.sh`
-  deployed to all 8 live even units (8, 10, 12, 14, 16, 22, 24, 42) on
-  2026-10-17. Odd units still need it when they surface.
-- **wifi-ros-net-5 for odd units** — all 8 even units prefer ROS_NET_5
-  (priority 20, static IP, dedicated net fallback at 10). Odd units are
-  pending: unverified whether ROS_NET_5's fabric carries 192.168.1.0/24 —
-  test with the first odd unit that powers up; worst case they DHCP on
-  ROS_NET_5.
+- (none — all 17 provisioned units are at the current standard as of
+  2026-10-17)
+
+## Network layout (2026-10-17)
+
+- **All 17 provisioned units are on ROS_NET_5** at `192.168.2.<unit#>` —
+  profile `ROS_NET_5` (priority 20, static IP, gw 192.168.2.1) pushed via
+  `playbooks/wifi-ros-net-5.yml` and switched fleet-wide (`switch_now=true`).
+  Inventory `ansible_host`s now reflect the .2 addresses.
+- **Fallbacks**: each unit's dedicated net stays autoconnect at priority 10 —
+  evens on ROS_NET_EVEN (same .2.x fabric as ROS_NET_5), odds on ROS_NET_ODD
+  at their original `192.168.1.<id>` statics. ROS_NET_ODD's AP now DHCPs on
+  192.168.3.0/24 but .1.x still works at L2 — to reach a fallen-back odd
+  unit, join ROS_NET_ODD and add a .1 alias:
+  `nmcli device modify wlp4s0 +ipv4.addresses 192.168.1.175/24`.
+- **Unit 1 exception**: `192.168.2.1` is the ROS_NET_5 gateway, so its
+  ROS_NET_5 address is `192.168.2.101` (host var `ros_net_5_static_ip` in
+  inventory).
 
 ## Fleet-wide known issues
 
