@@ -170,12 +170,20 @@ class SerialTransport:
     name = 'serial'
 
     def __init__(self, node):
+        self._node = node
+        self._drops = 0
         self._port = node.get_parameter('serial_port').value
         self._baud = node.get_parameter('baud_rate').value
         try:
             import serial
-            # timeout=0 -> non-blocking writes; we never read back.
-            self._ser = serial.Serial(self._port, self._baud, timeout=0)
+            # timeout=0 -> non-blocking reads (we never read anyway);
+            # write_timeout=0 -> non-blocking writes. With the default
+            # write_timeout=None a full TX buffer BLOCKS the cmd_vel
+            # callback, DDS then queues fresh messages, and they execute
+            # seconds late — seen on qb3rt-21 as "stale commands replaying"
+            # long after a pulse ended.
+            self._ser = serial.Serial(
+                self._port, self._baud, timeout=0, write_timeout=0)
             backend = 'pyserial'
             self.exceptions = (serial.SerialException, OSError)
         except ImportError:
@@ -185,7 +193,18 @@ class SerialTransport:
         self.summary = f'{self._port} @ {self._baud} ({backend})'
 
     def send(self, cmd):
-        self._ser.write((cmd + '\n').encode('ascii'))
+        try:
+            self._ser.write((cmd + '\n').encode('ascii'))
+        except self.exceptions:
+            # TX buffer full -> the ESP32 is draining slower than we publish.
+            # Dropping a cmd_vel tick is harmless (the next arrives in ~20 ms);
+            # queueing a STALE one is not — it replays motion later. A dead
+            # adapter also lands here, so count + rate-limit a warning.
+            self._drops += 1
+            if self._drops % 50 == 1:
+                self._node.get_logger().warn(
+                    f'serial TX dropped {self._drops} command(s) so far — '
+                    'ESP32 not draining or adapter dead')
 
     def close(self):
         self._ser.close()

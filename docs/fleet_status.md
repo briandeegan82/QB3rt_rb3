@@ -30,7 +30,7 @@ need `base-config` + payload + probe to reach current standard.
 | 18 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 19 | odd  | yes | none | no | no | no | — | profile only, never stamped |
 | 20 | even | yes | none | no | no | no | — | profile only, never stamped |
-| 21 | odd  | yes | pinned | done | done | no | — | stamped + base-config + payload; **needs floor probe** |
+| 21 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye; stale serial-TX commands replayed as multi-phase motion (bridge now writes non-blocking) |
 | 22 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — board mounted backwards, conventions compensate |
 | 23 | odd  | yes | none | no | no | no | — | profile only, never stamped |
 | 24 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on carpet) |
@@ -52,7 +52,7 @@ not a real unit.
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
 - **`drive_inverted` is mostly `false`** (true: 17, 22, 24; false: 3, 5,
-  7, 8, 9, 10, 11, 13, 25). Fleet default in `wave_rover_bridge.yaml` is now
+  7, 8, 9, 10, 11, 13, 21, 25). Fleet default in `wave_rover_bridge.yaml` is now
   `false`; the eyeball verify step in the probe is still not optional —
   lidar delta has misread non-nose obstacles (unit 9) and IMU-x sign is
   not fleet-consistent (unit 17).
