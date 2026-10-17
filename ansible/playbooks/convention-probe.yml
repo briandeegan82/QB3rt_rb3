@@ -161,11 +161,17 @@
           when: "'b' in verify_ans.user_input | default('')"
           block:
             - name: Flip drive_inverted in the conventions file
+              # The probe may leave the key UNWRITTEN on weak sensor data —
+              # sed alone would no-op and the re-pulse would test the same
+              # wrong default. Missing key -> effective value is the bridge
+              # yaml default (false), so the flip writes true.
               ansible.builtin.shell: |
                 if grep -q '^drive_inverted: true' /etc/qb3rt/unit_conventions.yaml; then
                   sed -i 's/^drive_inverted:.*/drive_inverted: false/' /etc/qb3rt/unit_conventions.yaml
-                else
+                elif grep -q '^drive_inverted:' /etc/qb3rt/unit_conventions.yaml; then
                   sed -i 's/^drive_inverted:.*/drive_inverted: true/' /etc/qb3rt/unit_conventions.yaml
+                else
+                  echo 'drive_inverted: true' >> /etc/qb3rt/unit_conventions.yaml
                 fi
                 grep '^drive_inverted' /etc/qb3rt/unit_conventions.yaml
               become: true
