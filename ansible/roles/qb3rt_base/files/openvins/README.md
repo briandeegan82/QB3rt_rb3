@@ -24,24 +24,29 @@ Config ships in `config/openvins/` (deployed with the QB3rt package):
 Run on a unit:
 
 ```bash
-source /opt/qb3rt/install/setup.bash   # merged overlay
-# NOTE: the tarball extracts an *isolated* layout — install/ov_msckf/lib/...,
-# not install/lib/... — so ament never registers ov_msckf and `ros2 run`
-# fails. Run the binary directly with the three lib dirs on the path:
-export LD_LIBRARY_PATH=/opt/qb3rt/install/ov_msckf/lib:/opt/qb3rt/install/ov_core/lib:/opt/qb3rt/install/ov_init/lib:$LD_LIBRARY_PATH
-/opt/qb3rt/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf \
-  /opt/qb3rt/install/share/QB3rt/config/openvins/estimator_config.yaml
+qb3rt-up openvins    # base + camera + IMU + ov_msckf, systemd-managed
+# or by hand:
+ros2 launch QB3rt openvins.launch.py
 ```
+
+The tarball is now repacked as a flat merged install (`lib/`, `share/` +
+ament index at the top level), so `ros2 run ov_msckf run_subscribe_msckf
+<config>` also works directly — the binaries carry no rpath and resolve
+their libs via the `install/lib` entry that the overlay's environment
+hooks already put on `LD_LIBRARY_PATH`.
 
 Odometry is published on `/odomimu` (plus `/poseimu`, `/pathimu`,
 `/points_msckf`, `/trackhist`) — NOT `/ov_msckf/*` as previously assumed.
+The odom is in the filter's init-anchored world frame (~arbitrary heading),
+so it is not EKF-fusable without a re-anchor step.
 
 **Verified on qb3rt-42 (2026-10-17):** initialized on a hand carry, tracked
 a 10.6 m path, loop closure back at the start point was ~0.23 m (~2%),
-z drift 1 cm, cam-IMU timeoffset stable at 12 ms. The unit-12 runaway did
-not reproduce — its failure was likely the degenerate ceiling-facing init,
-not the config suspects above. Note: `qrb_ros_imu` emits IMU samples in
-duplicate-timestamp pairs at ~400 Hz — cosmetic "Zero DT" warnings, but
+z drift 1 cm, cam-IMU timeoffset stable at 12 ms. Driven test: VIO tracked
+a 1.0 m commanded move at 1.03 m — scale is accurate. The unit-12 runaway
+did not reproduce — its failure was likely the degenerate ceiling-facing
+init, not the config suspects above. Note: `qrb_ros_imu` emits IMU samples
+in duplicate-timestamp pairs at ~400 Hz — cosmetic "Zero DT" warnings, but
 worth filtering if it ever feeds a real consumer.
 
 Needs `/image_raw` (mono8) at ~30 Hz and `/imu/data` at ~200 Hz — e.g.
