@@ -106,6 +106,57 @@ ros2 topic hz /map                  # after slam_toolbox is up
 ros2 run tf2_tools view_frames      # map→odom→base_footprint→base_link→laser
 ```
 
+### Laptop-side demo (verified 2026-10-17, unit 42 on ROS_NET_5)
+
+Drive SLAM/Nav2 from the laptop over Wi-Fi. Everything below works on any
+provisioned unit on ROS_NET_5 — the only per-unit value is the domain ID.
+
+```bash
+# on the unit: full onboard stack (base + odom + slam_toolbox + Nav2)
+ssh ubuntu@192.168.2.<N> qb3rt-up full_stack
+
+# on the unit: compressed camera republish — /image_raw is 720p mono8 raw
+# (~200 Mbps), so republish JPEG-compressed for the Wi-Fi link
+ssh ubuntu@192.168.2.<N> 'sudo systemd-run --unit=qb3rt-imgrepub \
+  --setenv=HOME=/home/ubuntu --setenv=ROS_DOMAIN_ID=<N> \
+  --setenv=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp bash -lc \
+  "source /opt/qb3rt/install/setup.bash && \
+   ros2 run image_transport republish raw compressed --ros-args \
+   -r in:=image_raw -r out/compressed:=image_raw/compressed"'
+
+# on the laptop: env is already Cyclone + matching domain; multicast works
+# on ROS_NET_5 so no peer file is needed laptop-side
+rviz2 -d rviz/fleet_demo.rviz
+```
+
+`rviz/fleet_demo.rviz` ships Grid/TF/Map/LaserScan/RobotModel/Odometry-trail,
+a **Camera** display on `/image_raw` with `Transport Hint: compressed`, the
+Nav2 panel (class `nav2_rviz_plugins/Navigation 2` — `Nav2Panel` does not
+exist) and the 2D Pose Estimate / Nav Goal / Publish Point tools.
+
+Explore by clicking **2D Goal Pose** toward unmapped (gray) space; the map
+extends as the robot drives. Save the finished map on the unit:
+
+```bash
+ssh ubuntu@192.168.2.<N> 'mkdir -p ~/maps && \
+  ros2 run nav2_map_server map_saver_cli -f ~/maps/lab \
+  --ros-args -p map_subscribe_transient_local:=true'
+```
+
+Teardown: `ssh ubuntu@192.168.2.<N> 'qb3rt-down; sudo systemctl stop qb3rt-imgrepub'`
+(the republisher is a transient unit and dies on reboot anyway).
+
+Gotchas seen:
+
+- `systemd-run` without `HOME=` kills rcl nodes at startup
+  (`rcutils_expand_user failed`) — always pass `--setenv=HOME=/home/ubuntu`.
+- Unit clocks run ~80 days behind the laptop (no WAN/time-sync) — harmless
+  for RViz since `/tf`, `/scan`, `/map` share the unit's own clock domain;
+  transient "extrapolation into the future"/queue-full messages at startup
+  are noise.
+- There is no autonomous frontier explorer in the image — exploration is
+  goal-driven. `explore_lite` could be added if hands-free coverage is wanted.
+
 For Nav2 goals: lifecycle nodes active, then set a **Nav2 Goal** in RViz. Confirm
 `/cmd_vel` is non-zero while driving (`enable_base_driver` defaults true).
 
