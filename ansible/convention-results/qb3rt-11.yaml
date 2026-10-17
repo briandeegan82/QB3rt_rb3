@@ -1,0 +1,8 @@
+# Per-unit hardware conventions, measured by qb3rt-convention-probe.
+# Consumed by: wave_rover_bridge.py (drive_inverted) and
+# static_transforms.launch.py (lidar_yaw default).
+# probed: 2026-10-17 on qb3rt-11 — manual method (unit held, battery
+# issue): wheel-spin direction under each setting + scan cluster at the
+# camera-facing obstacle (0.36 m at raw -21 deg -> yaw 0).
+drive_inverted: false
+lidar_yaw: 0.0
