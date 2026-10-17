@@ -136,6 +136,14 @@ def nearest_obstacle_range(scan):
 def probe_linear(p):
     print("linear probe: +x 0.15 m/s for 1.2 s (watch the robot) ...")
     r0 = nearest_obstacle_range(p.scan)
+    # SANITY: the operator is asked for ~0.5 m — if the tracked cluster is
+    # far off that, it probably ISN'T the placed object and the delta is
+    # garbage (qb3rt-25 classified on a 0.83 m stray return). Warn loudly.
+    if r0 is not None and abs(r0 - 0.5) > 0.3:
+        print(f"  WARNING: obstacle at {r0:.2f} m — far from the ~0.5 m "
+              f"placement, the probe may be tracking the WRONG object. "
+              f"Treat this classification with suspicion; the verify "
+              f"pulse is the authority.")
     samples = p.pulse(linear=0.15, secs=1.2)
     p.spin(0.3)  # let a post-pulse scan arrive
     r1 = nearest_obstacle_range(p.scan)

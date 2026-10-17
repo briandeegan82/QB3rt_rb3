@@ -2,5 +2,5 @@
 # Consumed by: wave_rover_bridge.py (drive_inverted) and
 # static_transforms.launch.py (lidar_yaw default).
 # probed: 2026-10-17 10:28:55 on qb3rt-25
-drive_inverted: true
+drive_inverted: false
 lidar_yaw: 0.0
