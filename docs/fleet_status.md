@@ -42,7 +42,7 @@ need `base-config` + payload + probe to reach current standard.
 | 30 | — | no | — | no | no | no | — | no profile |
 | 31 | — | no | — | no | no | no | — | no profile |
 | 32 | — | no | — | no | no | no | — | no profile |
-| 42 | even | yes | pinned | done | done | no | — | golden sample / dev target (domain 42); serials captured + stamped, base-config + payload done; **needs floor probe** |
+| 42 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — golden sample / dev target (domain 42); serials captured + stamped same day; IMU-x flipped vs body-x (probe trusted lidar delta); lidar rear-facing |
 
 ## Fleet-wide known issues
 
@@ -50,7 +50,7 @@ need `base-config` + payload + probe to reach current standard.
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
 - **`drive_inverted` is mostly `false`** (true: 12, 16, 17, 22, 24; false:
-  3, 5, 7, 8, 9, 10, 11, 13, 14, 21, 25). Fleet default in `wave_rover_bridge.yaml` is now
+  3, 5, 7, 8, 9, 10, 11, 13, 14, 21, 25, 42). Fleet default in `wave_rover_bridge.yaml` is now
   `false`; the eyeball verify step in the probe is still not optional —
   lidar delta has misread non-nose obstacles (unit 9) and IMU-x sign is
   not fleet-consistent (unit 17).
@@ -59,7 +59,7 @@ need `base-config` + payload + probe to reach current standard.
   all. Fixed by installing the blob + PCI rebind; `qb3rt_base` now stages
   `renesas_usb_fw.mem` fleet-wide. If a unit shows zero `/dev/ttyUSB*`,
   check `dmesg | grep renesas` first.
-- **Unit 17's IMU-x is flipped vs body-x** — IMU accel sign is not a
+- **Units 17 and 42 have IMU-x flipped vs body-x** — IMU accel sign is not a
   reliable forward indicator fleet-wide; the probe's lidar-range delta is
   the primary discriminant for exactly this reason.
 - **Carpet/high-friction floors** produce sub-threshold motion in the
