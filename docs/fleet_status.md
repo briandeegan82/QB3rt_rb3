@@ -44,6 +44,14 @@ need `base-config` + payload + probe to reach current standard.
 | 32 | — | no | — | no | no | no | — | no profile |
 | 42 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — golden sample / dev target (domain 42); serials captured + stamped same day; IMU-x flipped vs body-x (probe trusted lidar delta); lidar rear-facing |
 
+## Pending fleet actions
+
+- **Bulk payload redeploy** — units other than 42 still carry the old
+  isolated-layout OpenVINS tarball and the pre-flat-merge tree. Harmless
+  (nothing else runs ov_msckf), but run `update_project.sh --unit N`
+  fleet-wide when both nets are next online together so every unit gets
+  `launch/openvins.launch.py` + the flat package layout.
+
 ## Fleet-wide known issues
 
 - **No WAN on ROS_NET_EVEN or ROS_NET_ODD** — `https-time-sync` fails on
