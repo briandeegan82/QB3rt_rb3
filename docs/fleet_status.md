@@ -64,6 +64,10 @@ need `base-config` + payload + probe to reach current standard.
 - **Unit 1 exception**: `192.168.2.1` is the ROS_NET_5 gateway, so its
   ROS_NET_5 address is `192.168.2.101` (host var `ros_net_5_static_ip` in
   inventory).
+- **DDS peer**: `/etc/qb3rt/dds_peer_ros_net_5` = `192.168.2.175` (laptop's
+  ROS_NET_5 DHCP lease) written on all 17 units. If the laptop's lease
+  changes, re-run `wifi-ros-net-5.yml -e ros_net_5_laptop_ip=<new>` — or
+  reserve the laptop's IP on the AP.
 
 ## Fleet-wide known issues
 
