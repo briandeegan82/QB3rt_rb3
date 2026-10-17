@@ -85,8 +85,14 @@
             done
             ros2 component load /imu_container qrb_ros_imu qrb_ros::imu::ImuComponent \
               --node-name imu --remap imu:=/imu/data
-            sleep 4
-            timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average
+            # The freshly loaded component takes ~10-20 s to open the sensor
+            # socket and start publishing — a single short hz check raced it
+            # and failed the playbook on qb3rt-16. Poll for up to 30 s.
+            for i in $(seq 1 15); do
+              timeout 8 ros2 topic hz /imu/data --window 10 2>/dev/null | grep -q average && exit 0
+              sleep 2
+            done
+            exit 1
           become: false
           args:
             executable: /bin/bash

@@ -25,7 +25,7 @@ need `base-config` + payload + probe to reach current standard.
 | 13 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye; Wi-Fi radio was disabled (only dock ethernet); renesas fw was missing but ROM fallback kept USB alive |
 | 14 | even | yes | pinned | done | done | no | — | base-config + payload done; **needs floor probe** |
 | 15 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
-| 16 | even | yes | pinned | done | done | no | — | base-config + payload done (QAIRT 2.49 fresh); **needs floor probe** |
+| 16 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — verified by eye; sensor-watch timer + sensor_service restart revived dead IMU |
 | 17 | odd  | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — IMU-x flipped vs body-x |
 | 18 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 19 | odd  | yes | none | no | no | no | — | profile only, never stamped |
@@ -51,8 +51,8 @@ not a real unit.
 - **No WAN on ROS_NET_EVEN or ROS_NET_ODD** — `https-time-sync` fails on
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
-- **`drive_inverted` is mostly `false`** (true: 12, 17, 22, 24; false: 3, 5,
-  7, 8, 9, 10, 11, 13, 21, 25). Fleet default in `wave_rover_bridge.yaml` is now
+- **`drive_inverted` is mostly `false`** (true: 12, 16, 17, 22, 24; false:
+  3, 5, 7, 8, 9, 10, 11, 13, 21, 25). Fleet default in `wave_rover_bridge.yaml` is now
   `false`; the eyeball verify step in the probe is still not optional —
   lidar delta has misread non-nose obstacles (unit 9) and IMU-x sign is
   not fleet-consistent (unit 17).

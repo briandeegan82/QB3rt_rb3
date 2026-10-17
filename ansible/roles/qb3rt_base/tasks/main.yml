@@ -232,6 +232,18 @@
         [Install]
         WantedBy=timers.target
 
+# A task, not just the handler: if the unit files already exist (e.g. an
+# earlier base-config died after installing them but before handlers ran),
+# the handler never fires and the watchdog stays disabled — qb3rt-16 hit
+# exactly this and /imu/data stayed dead.
+- name: Ensure sensor-watch timer is enabled and running
+  ansible.builtin.systemd:
+    name: qb3rt-sensor-watch.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+
 # --- QAIRT 2.49 runtime upgrade ------------------------------------------------
 # Stock noble apt ships qairt 2.46, whose V68 DSP skel cannot create MatMul ops
 # and which rejects every context binary AI Hub can produce (they only offer
