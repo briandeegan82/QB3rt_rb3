@@ -25,7 +25,7 @@ need `base-config` + payload + probe to reach current standard.
 | 13 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye; Wi-Fi radio was disabled (only dock ethernet); renesas fw was missing but ROM fallback kept USB alive |
 | 14 | even | yes | pinned | done | done | no | — | base-config + payload done; **needs floor probe** |
 | 15 | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
-| 16 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — verified by eye; sensor-watch timer + sensor_service restart revived dead IMU |
+| 16 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=π` | **fully provisioned** — full-stack verified: eyeball + RF2O bidirectional + raw scan; lidar rear-facing; dead IMU healed by sensor-watch |
 | 17 | odd  | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — IMU-x flipped vs body-x |
 | 18 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 19 | odd  | yes | none | no | no | no | — | profile only, never stamped |
