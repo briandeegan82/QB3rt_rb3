@@ -28,7 +28,7 @@ need `base-config` + payload + probe to reach current standard.
 | 16 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=π` | **fully provisioned** — full-stack verified: eyeball + RF2O bidirectional + raw scan; lidar rear-facing; dead IMU healed by sensor-watch |
 | 17 | odd  | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — IMU-x flipped vs body-x |
 | 18 | even | yes | none | no | no | no | — | profile only, never stamped |
-| 19 | odd  | yes | none | no | no | no | — | profile only, never stamped |
+| 19 | odd  | yes | pinned 2026-10-21 (first capture — conf serials were blank) | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — `.2.19` on ROS_NET_5, ODD fallback; stamp stranded it on ODD (fixed in `_stamp_on_device.sh`), recovered via UART; probe verified by eye — IMU-x flipped vs body-x (probe wrote `true`; eyeball + lidar delta → `false`, forward confirmed on carpet with stronger pulse) |
 | 20 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 21 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye; stale serial-TX commands replayed as multi-phase motion (bridge now writes non-blocking) |
 | 22 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — board mounted backwards, conventions compensate |
