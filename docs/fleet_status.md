@@ -15,7 +15,7 @@ need `base-config` + payload + probe to reach current standard.
 | 3  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on its floor) |
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
 | 5  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — verified by eye; rover adapter was flapping on USB (re-seated), renesas fw added, lidar rear-facing |
-| 6  | even | yes | pinned | done | done | done | — | base-config + payload + ROS_NET_5 (`.2.6`, EVEN fallback created) done 2026-10-21; **probe remaining** |
+| 6  | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — base-config + payload + ROS_NET_5 (`.2.6`, EVEN fallback created) 2026-10-21; probe verified by eye — IMU-x flipped vs body-x (probe wrote `true`, lidar delta showed motion toward nose obstacle; eyeball caught it, re-pulse forward under `false`) |
 | 7  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (forward + CCW); original source of fleet `drive_inverted: true` default, but with current board mounting `false` is correct |
 | 8  | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** |
 | 9  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (probe misclassified; lidar tracked a non-nose obstacle); shipped without `renesas_usb_fw.mem` — dead USB fixed |
