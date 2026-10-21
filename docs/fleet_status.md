@@ -11,7 +11,7 @@ need `base-config` + payload + probe to reach current standard.
 | Unit | Net | Profile | Serials | base-config | Payload | Probe | Conventions | Notes |
 |---:|---|---|---|---|---|---|---|---|
 | 1  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
-| 2  | even | yes | re-pinned 2026-10-21 (hw swapped; serials re-captured) | done | done | done | — | provisioned 2026-10-21; ROS_NET_5 profile was stamp-deleted mid-process (WIFI_KEEP lacked it — fixed fleet-wide) and recovered via serial + `nmcli connect`; `.2.2` on ROS_NET_5, EVEN fallback; **probe remaining** |
+| 2  | even | yes | re-pinned 2026-10-21 (hw swapped; serials re-captured) | done | done | done | `drive_inverted=true, lidar_yaw=π` | **fully provisioned** — ROS_NET_5 profile was stamp-deleted mid-process (WIFI_KEEP lacked it — fixed fleet-wide), recovered via serial + `nmcli connect`; `.2.2` on ROS_NET_5, EVEN fallback; probe verified by eye (weak IMU signal: launch/rotation under threshold, lidar + eyeball decisive); lidar rear-facing |
 | 3  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on its floor) |
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
 | 5  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — verified by eye; rover adapter was flapping on USB (re-seated), renesas fw added, lidar rear-facing |
@@ -77,7 +77,7 @@ need `base-config` + payload + probe to reach current standard.
 - **No WAN on ROS_NET_EVEN or ROS_NET_ODD** — `https-time-sync` fails on
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
-- **`drive_inverted` is mostly `false`** (true: 12, 16, 17, 22, 24; false:
+- **`drive_inverted` is mostly `false`** (true: 2, 12, 16, 17, 22, 24; false:
   3, 5, 7, 8, 9, 10, 11, 13, 14, 21, 25, 42). Fleet default in `wave_rover_bridge.yaml` is now
   `false`; the eyeball verify step in the probe is still not optional —
   lidar delta has misread non-nose obstacles (unit 9) and IMU-x sign is
