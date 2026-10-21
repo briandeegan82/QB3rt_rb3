@@ -43,8 +43,7 @@
          | default("=", true) | split("=", 1) | last }}
     unit_num: "{{ inventory_hostname | regex_search('[0-9]+$') }}"
     dedicated_ip: "{{ ('192.168.1.' if 'qb3rt_odd' in group_names else '192.168.2.') ~ unit_num }}"
-    ros_net_5_static_ip: ""
-    unit_ip: "{{ ros_net_5_static_ip if ros_net_5_static_ip | length > 0 else '192.168.2.' ~ unit_num }}"
+    unit_ip: "{{ ros_net_5_static_ip | default('192.168.2.' ~ unit_num, true) }}"
     unit_gw: "{{ unit_ip.split('.')[:3] | join('.') }}.1"
     ros_net_5_laptop_ip: ""
     switch_now: false
