@@ -10,7 +10,7 @@ need `base-config` + payload + probe to reach current standard.
 
 | Unit | Net | Profile | Serials | base-config | Payload | Probe | Conventions | Notes |
 |---:|---|---|---|---|---|---|---|---|
-| 1  | odd  | yes | pinned | done | done | done | — | provisioned 2026-10-21; `.2.101` on ROS_NET_5 (special-case — `.2.1` is the gateway; playbook var-shadowing bug fixed), ODD fallback; serials verified (rplidar→ttyUSB1, wave_rover→ttyUSB0); **probe remaining** |
+| 1  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — `.2.101` on ROS_NET_5 (special-case — `.2.1` is the gateway; playbook var-shadowing bug fixed), ODD fallback; serials verified (rplidar→ttyUSB1, wave_rover→ttyUSB0); probe verified by eye (forward + CCW correct; IMU under threshold — probable flipped IMU-x, lidar delta decisive) |
 | 2  | even | yes | re-pinned 2026-10-21 (hw swapped; serials re-captured) | done | done | done | `drive_inverted=true, lidar_yaw=π` | **fully provisioned** — ROS_NET_5 profile was stamp-deleted mid-process (WIFI_KEEP lacked it — fixed fleet-wide), recovered via serial + `nmcli connect`; `.2.2` on ROS_NET_5, EVEN fallback; probe verified by eye (weak IMU signal: launch/rotation under threshold, lidar + eyeball decisive); lidar rear-facing |
 | 3  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on its floor) |
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
