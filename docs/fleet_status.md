@@ -11,7 +11,7 @@ need `base-config` + payload + probe to reach current standard.
 | Unit | Net | Profile | Serials | base-config | Payload | Probe | Conventions | Notes |
 |---:|---|---|---|---|---|---|---|---|
 | 1  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
-| 2  | even | yes | re-pinned 2026-10-21 (hw swapped; serials re-captured) | done | done | no | — | base-config + payload + ROS_NET_5 done 2026-10-21, but stamp deleted the ROS_NET_5 profile (WIFI_KEEP lacked it — now fixed fleet-wide) while ROS_NET_EVEN's AP is off → **stranded**; needs ROS_NET_EVEN SSID broadcast (phone hotspot or AP rename) or serial access to re-push the profile, then probe |
+| 2  | even | yes | re-pinned 2026-10-21 (hw swapped; serials re-captured) | done | done | done | — | provisioned 2026-10-21; ROS_NET_5 profile was stamp-deleted mid-process (WIFI_KEEP lacked it — fixed fleet-wide) and recovered via serial + `nmcli connect`; `.2.2` on ROS_NET_5, EVEN fallback; **probe remaining** |
 | 3  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on its floor) |
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
 | 5  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — verified by eye; rover adapter was flapping on USB (re-seated), renesas fw added, lidar rear-facing |
