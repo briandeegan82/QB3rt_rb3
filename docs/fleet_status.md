@@ -78,7 +78,7 @@ need `base-config` + payload + probe to reach current standard.
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
 - **`drive_inverted` is mostly `false`** (true: 2, 12, 16, 17, 22, 24; false:
-  3, 5, 7, 8, 9, 10, 11, 13, 14, 21, 25, 42). Fleet default in `wave_rover_bridge.yaml` is now
+  1, 3, 5, 6, 7, 8, 9, 10, 11, 13, 14, 21, 25, 42). Fleet default in `wave_rover_bridge.yaml` is now
   `false`; the eyeball verify step in the probe is still not optional —
   lidar delta has misread non-nose obstacles (unit 9) and IMU-x sign is
   not fleet-consistent (unit 17).
