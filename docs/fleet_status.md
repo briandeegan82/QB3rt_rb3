@@ -24,7 +24,7 @@ need `base-config` + payload + probe to reach current standard.
 | 12 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — verified by eye; probe sensors under threshold (soft floor) but two backward pulses under `false` + forward under `true` were unambiguous |
 | 13 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye; Wi-Fi radio was disabled (only dock ethernet); renesas fw was missing but ROM fallback kept USB alive |
 | 14 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — clean probe run; all pulses forward under `false`; nose object at raw +117° (rear hemisphere) → lidar rear-facing |
-| 15 | odd  | yes | pinned (verified vs hardware 2026-10-21) | done | done | done | — | provisioned 2026-10-21 over phone hotspot (`Brians iPhone` profile); `ROS_NET_5` profile staged at `.2.15` priority 20 — auto-migrates when in range; ODD fallback; base-config ran to **full** completion incl. https-time-sync (hotspot has WAN) + stack services + demo nodes; serials verified (rplidar→ttyUSB0, wave_rover→ttyUSB1); **probe remaining** |
+| 15 | odd  | yes | pinned (verified vs hardware 2026-10-21) | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — provisioned over phone hotspot (`Brians iPhone` profile); `ROS_NET_5` staged at `.2.15` priority 20 — auto-migrates in range; ODD fallback; base-config full completion incl. https-time-sync; serials verified (rplidar→ttyUSB0, wave_rover→ttyUSB1); probe verified by eye — IMU-x flipped vs body-x; lidar rear-facing |
 | 16 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=π` | **fully provisioned** — full-stack verified: eyeball + RF2O bidirectional + raw scan; lidar rear-facing; dead IMU healed by sensor-watch |
 | 17 | odd  | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — IMU-x flipped vs body-x |
 | 18 | even | yes | none | no | no | no | — | profile only, never stamped |
@@ -78,7 +78,7 @@ need `base-config` + payload + probe to reach current standard.
   every unit; clocks drift ~2 weeks stale and must be set manually (or a
   local NTP/chrony peer configured). TLS and DDS time alignment suffer.
 - **`drive_inverted` is mostly `false`** (true: 2, 12, 16, 17, 22, 24; false:
-  1, 3, 5, 6, 7, 8, 9, 10, 11, 13, 14, 21, 25, 42). Fleet default in `wave_rover_bridge.yaml` is now
+  1, 3, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 19, 21, 25, 42). Fleet default in `wave_rover_bridge.yaml` is now
   `false`; the eyeball verify step in the probe is still not optional —
   lidar delta has misread non-nose obstacles (unit 9) and IMU-x sign is
   not fleet-consistent (unit 17).
