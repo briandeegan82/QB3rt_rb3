@@ -91,10 +91,19 @@ if [ -n "${STATIC_IP:-}" ] && [ -n "${WIFI_SSID:-}" ]; then
     while IFS=: read -r cname ctype; do
         [ "$ctype" = "802-11-wireless" ] || continue
         [ "$cname" = "$WIFI_SSID" ] && continue
-        nmcli connection modify "$cname" connection.autoconnect no && echo "  deprioritized $cname"
+        if [ "$cname" = "ROS_NET_5" ]; then
+            # Preferred fleet fabric (docs/fleet_status.md): ROS_NET_5 outranks
+            # the dedicated fallback — keep it autoconnecting at priority 20 or
+            # the unit strands itself when the dedicated AP isn't broadcasting.
+            nmcli connection modify "$cname" \
+                connection.autoconnect yes connection.autoconnect-priority 20 \
+                && { echo "  kept $cname preferred (priority 20)"; keep_switch="$cname"; }
+        else
+            nmcli connection modify "$cname" connection.autoconnect no && echo "  deprioritized $cname"
+        fi
     done < <(nmcli -t -f NAME,TYPE connection show)
-    schedule_switch "$WIFI_SSID"
-    echo "  active link switches to $WIFI_SSID ~3s after session ends"
+    schedule_switch "${keep_switch:-$WIFI_SSID}"
+    echo "  active link switches to ${keep_switch:-$WIFI_SSID} ~3s after session ends"
 elif [ -n "${STATIC_IP:-}" ]; then
     echo "== Static IP -> ${STATIC_IP} (ALL Wi-Fi nets) =="
     # Legacy/back-compat: no dedicated SSID given — pin EVERY saved Wi-Fi
