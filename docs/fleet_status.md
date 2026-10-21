@@ -11,11 +11,11 @@ need `base-config` + payload + probe to reach current standard.
 | Unit | Net | Profile | Serials | base-config | Payload | Probe | Conventions | Notes |
 |---:|---|---|---|---|---|---|---|---|
 | 1  | odd  | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
-| 2  | even | yes | pinned | legacy | ? | no | — | legacy-stamped; needs current pipeline |
+| 2  | even | yes | re-pinned 2026-10-21 (hw swapped; serials re-captured) | done | done | no | — | base-config + payload + ROS_NET_5 done 2026-10-21, but stamp deleted the ROS_NET_5 profile (WIFI_KEEP lacked it — now fixed fleet-wide) while ROS_NET_EVEN's AP is off → **stranded**; needs ROS_NET_EVEN SSID broadcast (phone hotspot or AP rename) or serial access to re-push the profile, then probe |
 | 3  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on its floor) |
 | 4  | even | yes | none | no | no | no | — | profile only, never stamped |
 | 5  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — verified by eye; rover adapter was flapping on USB (re-seated), renesas fw added, lidar rear-facing |
-| 6  | even | yes | pinned | ~95% — interrupted at QAIRT staging | no | no | — | rerun base-config to converge, then payload + probe |
+| 6  | even | yes | pinned | done | done | done | — | base-config + payload + ROS_NET_5 (`.2.6`, EVEN fallback created) done 2026-10-21; **probe remaining** |
 | 7  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (forward + CCW); original source of fleet `drive_inverted: true` default, but with current board mounting `false` is correct |
 | 8  | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** |
 | 9  | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — verified by eye (probe misclassified; lidar tracked a non-nose obstacle); shipped without `renesas_usb_fw.mem` — dead USB fixed |
