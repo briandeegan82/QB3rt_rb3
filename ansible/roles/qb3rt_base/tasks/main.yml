@@ -291,6 +291,36 @@
     qb3rt_base_qairt_version.rc != 0
     or qb3rt_base_qairt_version.stdout is version('2.49', '<')
 
+# The 2.49 debs declare phantom deps (libfastrpc1/hexagon-dsp-binaries/
+# fastrpc-support — Qualcomm-internal names, functionally covered by the
+# installed qcom-fastrpc1 + qairt-dsp-binaries). --force-depends installs them
+# anyway, but every subsequent apt resolution fails until the dpkg database is
+# repaired. Also relax the stale qairt-headers 2.46 pin on qairt-libs.
+- name: Repair dpkg metadata for QAIRT 2.49 phantom deps (un-breaks apt)
+  ansible.builtin.shell: |
+    python3 - <<'PYEOF'
+    s = open("/var/lib/dpkg/status").read()
+    blocks = s.split("\n\n")
+    changed = False
+    for i, b in enumerate(blocks):
+        if b.startswith("Package: qairt-libs\n") and "hexagon-dsp-binaries" in b:
+            blocks[i] = b.replace("libfastrpc1 (>= 1.0.6), ", "") \
+                         .replace(", hexagon-dsp-binaries, fastrpc-support", "")
+            changed = True
+        elif b.startswith("Package: qairt-headers\n") and "qairt-libs (= 2.46" in b:
+            blocks[i] = b.replace("qairt-libs (= 2.46.0-0ubuntu1~bpo24.04.1)",
+                                  "qairt-libs (>= 2.43.0.260128-0ubuntu2)")
+            changed = True
+    if changed:
+        open("/var/lib/dpkg/status", "w").write("\n\n".join(blocks))
+        print("repaired")
+    else:
+        print("already clean")
+    PYEOF
+  become: true
+  register: qb3rt_dpkg_repair
+  changed_when: "'repaired' in qb3rt_dpkg_repair.stdout"
+
 # 2.49 qairt-dsp-binaries installs skels under /usr/share/hexagon-dsp/, but the
 # golden image left unmanaged copies under /usr/share/qcom/ that
 # /usr/lib/dsp/cdsp/*.so symlinks point at — without repointing, the host libs
