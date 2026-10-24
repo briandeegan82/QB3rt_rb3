@@ -35,7 +35,7 @@ need `base-config` + payload + probe to reach current standard.
 | 23 | odd  | yes | pinned 2026-10-21 (first capture — conf serials were blank) | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — `.2.23` on ROS_NET_5, ODD fallback; apt tree repaired; serials verified (rplidar→ttyUSB1, wave_rover→ttyUSB0); probe verified by eye 2026-10-24 — forward under `false` on manual re-pulse; lidar front-facing (object at 0.40 m, raw −84°) |
 | 24 | even | yes | pinned | done | done | done | `drive_inverted=true, lidar_yaw=0` | **fully provisioned** — verified by eye (weak IMU signal on carpet) |
 | 25 | odd  | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=0` | **fully provisioned** — probe misclassified on a stray return (0.83 m vs the ~0.5 m obstacle) + likely flipped IMU-x; eyeball check caught it |
-| 26 | even | yes | none | no | no | no | — | profile only, never stamped |
+| 26 | even | yes | pinned 2026-10-24 (first capture — conf serials were blank) | done | done | done | — | provisioned 2026-10-24; `.2.26` on ROS_NET_5 (was DHCP `.2.173`), EVEN fallback; base-config fully converged incl. https-time-sync; serials verified (rplidar→ttyUSB1, wave_rover→ttyUSB0); **probe remaining** |
 | 27 | odd  | yes | none | no | no | no | — | profile only, never stamped |
 | 28 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 29 | odd  | yes | none | no | no | no | — | profile only, never stamped |
