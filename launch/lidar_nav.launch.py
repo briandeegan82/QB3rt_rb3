@@ -91,6 +91,9 @@ def generate_launch_description():
                     **common,
                     "bringup_base": "false",
                     "params_file": params_file,
+                    # Capitalized on purpose (see nav.launch.py). False skips
+                    # AMCL/map_server so Nav2 does not fight slam_toolbox.
+                    "use_localization": "False",
                 }.items(),
             ),
             Node(
