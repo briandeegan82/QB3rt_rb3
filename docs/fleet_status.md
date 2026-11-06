@@ -40,7 +40,7 @@ need `base-config` + payload + probe to reach current standard.
 | 28 | even | yes | none | no | no | no | — | profile only, never stamped |
 | 29 | odd  | yes | pinned 2026-11-06 (first capture — conf serials were blank) | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — provisioned entirely over phone hotspot (`Brians iPhone` at 172.20.10.2; stamp's ODD switch dropped it, recovered via UART, autoconnect re-enabled); serials identified without unplugging — ttyUSB1 answered RPLIDAR GET_INFO (same port order as 20/26/27); `ROS_NET_ODD` staged at `.1.29`; probe verified by eye (forward + CCW + verify pulse forward); lidar rear-facing |
 | 30 | — | no | — | no | no | no | — | no profile |
-| 31 | — | no | — | no | no | no | — | no profile |
+| 31 | odd  | yes | pinned 2026-11-06 (first capture — new conf created) | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — provisioned entirely over phone hotspot (`Brians iPhone` at 172.20.10.2; stamp's ODD switch dropped it, recovered via UART, autoconnect re-enabled); serials identified without unplugging — ttyUSB0 answered RPLIDAR GET_INFO (**opposite port order to 20/26/27/29**); `ROS_NET_ODD` staged at `.1.31`; probe verified by eye (forward + CCW + verify pulse forward; weak gyro +0.024 under +z — flagged, CCW confirmed by eye); lidar rear-facing |
 | 32 | — | no | — | no | no | no | — | no profile |
 | 42 | even | yes | pinned | done | done | done | `drive_inverted=false, lidar_yaw=π` | **fully provisioned** — golden sample / dev target (domain 42); serials captured + stamped same day; IMU-x flipped vs body-x (probe trusted lidar delta); lidar rear-facing |
 
