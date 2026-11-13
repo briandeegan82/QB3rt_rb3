@@ -59,7 +59,9 @@ arguments go in `/etc/qb3rt/stack-<profile>.env` as `QB3RT_LAUNCH_ARGS=...`.
 Nothing autostarts unless `qb3rt_stack_autostart_profile` is set in Ansible.
 `--addon` runs the launch file as a `qb3rt-addon@*` unit beside the running
 stack instead of stopping it — for extra nodes like YOLOE — while a plain
-`qb3rt-up`/`qb3rt-down` stops stack and add-ons alike.
+`qb3rt-up`/`qb3rt-down` stops stack and add-ons alike. Add-ons don't
+auto-restart, and restarting one waits for the NPU to settle after the
+previous instance tore down (`QB3RT_ADDON_SETTLE`, default 90 s).
 
 ## Hardware (per robot)
 

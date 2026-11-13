@@ -61,7 +61,7 @@ If `/scan` and `/tf` don't show up, start the robot's base stack with `qb3rt-up 
 
 ### 1b. Launch
 
-Run the launch twice over 1b/1c: first the fleet's COCO model, then the fleet's mission model. `$C` is the config directory defined in 1a. YOLOE runs as a service beside `full_stack` — `qb3rt-up --addon` starts it as the `qb3rt-addon@yolo_npu` unit without stopping the base stack. Its log is `journalctl -u qb3rt-addon@yolo_npu -f`, which is where the QAIRT backend line and the `Hz in` rates appear. Stop it with `qb3rt-down --addon yolo_npu`; rerunning `qb3rt-up --addon ...` restarts it, which is how you switch models or turn the overlay on for steps 2 and 4. Note that a main `qb3rt-up` or a plain `qb3rt-down` also stops the add-on, so restart it afterwards.
+Run the launch twice over 1b/1c: first the fleet's COCO model, then the fleet's mission model. `$C` is the config directory defined in 1a. YOLOE runs as a service beside `full_stack` — `qb3rt-up --addon` starts it as the `qb3rt-addon@yolo_npu` unit without stopping the base stack. Its log is `journalctl -u qb3rt-addon@yolo_npu -f`, which is where the QAIRT backend line and the `Hz in` rates appear. Stop it with `qb3rt-down --addon yolo_npu`; rerunning `qb3rt-up --addon ...` restarts it, which is how you switch models or turn the overlay on for steps 2 and 4. A restart waits about 90 s for the NPU to settle after the previous instance stops — that wait is built in, so just rerun the command. If the add-on dies (the overlay crash below, or a hardware fault) it drops out of `qb3rt-status` instead of looking alive but doing nothing. Note that a main `qb3rt-up` or a plain `qb3rt-down` also stops the add-on, so restart it afterwards.
 
 COCO first:
 
@@ -86,7 +86,7 @@ qb3rt-up --addon yolo_npu \
 Two warnings from the field:
 
 - **`enable_overlay:=true` can take the whole pipeline down.** The overlay component throws `Invalid bounding box(TLBR)` on any detection box poking outside the 640 frame, and because the camera, preprocess and inference share one process container, the abort kills all of them. Leave it `false` except when you need the annotated image — the resize check in step 2 and the extrinsic check in step 4 — and expect to restart it when it crashes.
-- **After a crash, the NPU graph stays wedged for ~30-60 s.** A restart too soon fails with `Failed to find graph` / `Inference graph init fail`. `qb3rt-down --addon yolo_npu`, wait a minute, then `qb3rt-up --addon ...` again. Rebooting the DSP daemon (`sudo systemctl restart cdsprpcd`) alone doesn't clear it.
+- **After a crash, the NPU graph stays wedged for up to ~90 s.** A restart too soon fails with `Failed to find graph` / `Inference graph init fail` — `qb3rt-up --addon ...` already waits out the settle period, so just rerun it. Rebooting the DSP daemon (`sudo systemctl restart cdsprpcd`) alone doesn't clear it.
 
 Check it's alive. The postprocess node publishes nothing when no detection passes the score threshold — not even an empty message — so silence with an empty view is normal. For the same reason, `ros2 topic hz` here measures the *detection* rate, not the ~12 Hz inference rate (the postprocess node logs the inference rate every 5 s as `Hz in`); frames with no detections don't count:
 
@@ -935,7 +935,7 @@ Run these in a shell on the robot (an interactive `ssh` login is fine). A one-sh
 | --- | --- | --- |
 | No detections at all | YOLOE isn't running, the object isn't in view, or the score threshold is too high | `ros2 topic hz /yoloe/detections` with the object in front; lower the `score_thres` launch argument (the detector's threshold, separate from the localiser's `min_score`) while testing |
 | `Inference graph init fail` / `Failed to find graph` at launch | Model built for the wrong arch (V73 vs V68), a 2.50 model on the 2.49 runtime (`Using newer context binary on old SDK`), or a previous crash left the DSP graph wedged | Try `yoloe_coco80_qa249.bin` (1a); check the QAIRT backend log line (1a); for a wedged graph see 1b |
-| Whole YOLOE pipeline died at once | `enable_overlay:=true` crashed on an out-of-bounds box — it takes the container (camera + inference) with it | See 1b; restart the add-on with `enable_overlay:=false` |
+| Whole YOLOE pipeline died at once | `enable_overlay:=true` crashed on an out-of-bounds box — it takes the container (camera + inference) with it | `qb3rt-status` shows the add-on is down; rerun `qb3rt-up --addon ...` with `enable_overlay:=false` (the settle wait is built in) |
 | Localiser exits at startup | `intrinsics`, `distortion` or `room2_limits` not set or the wrong length | The fatal log line names the parameter |
 | Detections but never a report | Target name doesn't match, or a TF error | Read the node's log; print the class names and compare them as strings |
 | `Lookup would require extrapolation` | Image stamps from a different clock, or a TF buffer without data at that time | Step 1e stamp check; as a diagnostic, look up TF at `Time()` and note the difference |

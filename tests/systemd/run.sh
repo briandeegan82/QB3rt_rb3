@@ -63,3 +63,9 @@ grep -q "outside systemd" /tmp/addon-stray.log && echo "stray note printed"
 pgrep -f "ros2 launch QB3rt test_addon" >/dev/null && echo "stray still alive"
 sudo -u ubuntu qb3rt-down --force
 pgrep -af "/opt/qb3rt|static_transform|ros2 launch" || echo "no stack processes left"
+echo "-- /opt/qb3rt paths in args/ancestors are not strays"
+sudo -u ubuntu qb3rt-up --addon test_addon dummy:=/opt/qb3rt/install/x 2>&1 | tee /tmp/addon-argpath.log
+grep -q "outside systemd" /tmp/addon-argpath.log && echo "FAIL: false stray note" || echo "no false stray note"
+sudo -u ubuntu bash -c 'true /opt/qb3rt/install/x; qb3rt-down --force' && echo "force down in matching ancestor completed"
+pgrep -af "bash -c.*qb3rt/install" && echo "FAIL: force down killed its own tree" || echo "ancestor survived"
+pgrep -af "/opt/qb3rt|static_transform|ros2 launch" || echo "no stack processes left"

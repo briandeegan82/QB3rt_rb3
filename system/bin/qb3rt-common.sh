@@ -18,10 +18,20 @@ qb3rt_active_units() {
 
 # PIDs of stack processes that are NOT inside a systemd-managed stack unit,
 # i.e. orphans of a `ros2 launch` started from a (now dead) SSH session.
+# The caller itself and its ancestors are excluded: an argument like
+# label_file:=/opt/qb3rt/install/... makes their cmdlines match
+# QB3RT_PROC_RE, and a forked subshell keeps a copy of that cmdline.
 qb3rt_stray_pids() {
-    local pid cg
+    local pid cg self
+    declare -A ours=()
+    self=$BASHPID
+    while [ "$self" -gt 1 ]; do
+        ours[$self]=1
+        self=$(awk '/^PPid:/{print $2}' "/proc/$self/status" 2>/dev/null)
+        [ -n "$self" ] || break
+    done
     for pid in $(pgrep -f -- "$QB3RT_PROC_RE"); do
-        [ "$pid" = "$$" ] && continue
+        [ -n "${ours[$pid]:-}" ] && continue
         cg=$(cat "/proc/$pid/cgroup" 2>/dev/null) || continue
         case "$cg" in
             *qb3rt-stack@*|*qb3rt-addon@*|*qb3rt-probe-*) continue ;;

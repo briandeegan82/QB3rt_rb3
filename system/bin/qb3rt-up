@@ -10,7 +10,9 @@
 #
 # --addon runs the launch file as qb3rt-addon@<profile>.service without
 # touching the running stack or reaping strays; rerunning it restarts just
-# that add-on.
+# that add-on. A restart waits for the NPU to settle after the previous
+# instance tore down: QB3RT_ADDON_SETTLE seconds (default 90) measured from
+# the unit's last journal entry.
 #
 # Persistent per-profile arguments: QB3RT_LAUNCH_ARGS=... in
 # /etc/qb3rt/stack-<profile>.env (fleet-wide: /etc/qb3rt/stack.env); add-ons
@@ -27,7 +29,7 @@ while [ $# -gt 0 ]; do
         *) break ;;
     esac
 done
-case "${1:-}" in -h|--help) sed -n '2,17p' "$0" | sed 's/^# \?//'; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,19p' "$0" | sed 's/^# \?//'; exit 0 ;; esac
 profile="${1:-full_stack}"; shift || true
 profile="${profile%.launch.py}"
 
@@ -39,6 +41,19 @@ if [ "$addon" -eq 1 ]; then
     # A live add-on instance gets restarted, not duplicated.
     if systemctl is-active --quiet "$unit"; then
         qb3rt_sudo systemctl stop "$unit"
+    fi
+    # The NPU graph needs time to release after a stop (a restart too soon
+    # leaves it wedged and the next start fails). The unit's last journal
+    # entry approximates its teardown time; systemd does not retain
+    # InactiveEnterTimestamp for template instances once they unload.
+    settle=${QB3RT_ADDON_SETTLE:-90}
+    last_stop=$(journalctl -u "$unit" -n1 -o short-unix --no-pager 2>/dev/null | awk 'NF{print int($1)}')
+    if [ -n "$last_stop" ] && [ "$settle" -gt 0 ]; then
+        elapsed=$(($(date +%s) - last_stop))
+        if [ "$elapsed" -lt "$settle" ]; then
+            echo "waiting $((settle - elapsed))s for the NPU to settle after the last stop"
+            sleep $((settle - elapsed))
+        fi
     fi
     qb3rt_sudo mkdir -p /run/qb3rt
     printf 'QB3RT_LAUNCH_ARGS=%s\n' "$*" | qb3rt_sudo tee "/run/qb3rt/addon-$profile.env" >/dev/null

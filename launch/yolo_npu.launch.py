@@ -6,6 +6,7 @@ from launch.actions import (
     ExecuteProcess,
     LogInfo,
     OpaqueFunction,
+    Shutdown,
 )
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -144,6 +145,10 @@ def _nodes(context):
             executable="component_container",
             composable_node_descriptions=[camera, preprocess, inference, overlay],
             additional_env=container_env,
+            # The container holds camera + inference: if it dies, inference
+            # is over, so shut the whole launch down and let the unit fail
+            # instead of leaving the postprocess alone in an "active" unit.
+            on_exit=Shutdown(reason="yoloe container exited"),
             output="screen",
         ),
     ]
