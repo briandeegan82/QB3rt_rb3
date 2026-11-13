@@ -6,7 +6,8 @@ mkdir -p /usr/local/lib/qb3rt /opt/qb3rt/install/share/QB3rt/launch /etc/profile
 install -m0644 $R/system/bin/qb3rt-common.sh /usr/local/lib/qb3rt/
 install -m0755 $R/system/bin/qb3rt-stack-exec $R/system/bin/qb3rt-wait-net /usr/local/lib/qb3rt/
 install -m0755 $R/system/bin/qb3rt-up $R/system/bin/qb3rt-down $R/system/bin/qb3rt-status /usr/local/bin/
-install -m0644 $R/system/qb3rt-stack@.service /etc/systemd/system/
+install -m0644 $R/system/qb3rt-stack@.service $R/system/qb3rt-addon@.service /etc/systemd/system/
+cp /repo/tests/systemd/test_addon.launch.py /opt/qb3rt/install/share/QB3rt/launch/
 cp -r $R/scripts /opt/qb3rt/install/share/QB3rt/
 cp /repo/tests/systemd/test.launch.py /opt/qb3rt/install/share/QB3rt/launch/
 mkdir -p /opt/qb3rt/install/share/ament_index/resource_index/packages && touch /opt/qb3rt/install/share/ament_index/resource_index/packages/QB3rt
@@ -35,3 +36,30 @@ sudo -u ubuntu bash -c 'source /etc/profile.d/qb3rt-ros-env.sh; setsid ros2 laun
 kill -9 "$(pgrep -f 'ros2 launch QB3rt test' | head -1)"; sleep 1
 sudo -u ubuntu qb3rt-up test; sleep 6; sudo -u ubuntu qb3rt-status; echo "status rc=$?"
 sudo -u ubuntu qb3rt-down; pgrep -af "/opt/qb3rt|static_transform|ros2 launch" || echo "no stack processes left"
+echo "== 5. add-on beside the stack"
+sudo -u ubuntu qb3rt-up test; sleep 6
+stack_ts=$(systemctl show -p ActiveEnterTimestamp --value qb3rt-stack@test)
+sudo -u ubuntu qb3rt-up --addon test_addon; sleep 6
+sudo -u ubuntu qb3rt-status; echo "status rc=$?"
+systemctl is-active qb3rt-stack@test qb3rt-addon@test_addon
+[ "$(systemctl show -p ActiveEnterTimestamp --value qb3rt-stack@test)" = "$stack_ts" ] && echo "stack untouched by add-on start"
+echo "-- add-on restart leaves the stack alone"
+sudo -u ubuntu qb3rt-up --addon test_addon; sleep 6
+systemctl is-active qb3rt-stack@test qb3rt-addon@test_addon
+[ "$(systemctl show -p ActiveEnterTimestamp --value qb3rt-stack@test)" = "$stack_ts" ] && echo "stack untouched by add-on restart"
+echo "-- qb3rt-down --addon stops only the add-on"
+sudo -u ubuntu qb3rt-down --addon test_addon
+systemctl is-active qb3rt-stack@test
+systemctl is-active qb3rt-addon@test_addon || echo "add-on stopped, stack still running"
+echo "-- a main qb3rt-up stops add-ons too"
+sudo -u ubuntu qb3rt-up --addon test_addon; sleep 6
+sudo -u ubuntu qb3rt-up test; sleep 6
+systemctl is-active qb3rt-stack@test
+systemctl is-active qb3rt-addon@test_addon || echo "add-on stopped by main qb3rt-up"
+echo "-- a stray launch is not killed by qb3rt-up --addon"
+sudo -u ubuntu bash -c 'source /etc/profile.d/qb3rt-ros-env.sh; setsid ros2 launch QB3rt test_addon.launch.py >/tmp/orph3.log 2>&1 &'; sleep 6
+sudo -u ubuntu qb3rt-up --addon test_addon 2>&1 | tee /tmp/addon-stray.log; sleep 4
+grep -q "outside systemd" /tmp/addon-stray.log && echo "stray note printed"
+pgrep -f "ros2 launch QB3rt test_addon" >/dev/null && echo "stray still alive"
+sudo -u ubuntu qb3rt-down --force
+pgrep -af "/opt/qb3rt|static_transform|ros2 launch" || echo "no stack processes left"

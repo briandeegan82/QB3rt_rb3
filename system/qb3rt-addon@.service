@@ -1,0 +1,41 @@
+# QB3rt add-on launch as a systemd service, for launch files that run BESIDE
+# the main stack profile instead of replacing it (e.g. YOLOE next to
+# full_stack). The instance name is the launch file stem in the QB3rt
+# package:
+#
+#   qb3rt-up --addon yolo_npu model:=...       start an add-on
+#   qb3rt-down --addon yolo_npu              stop just this add-on
+#   journalctl -u qb3rt-addon@yolo_npu -f
+#
+# Add-ons share the main stack's cgroup model (stop = SIGINT to `ros2
+# launch`, then SIGKILL of whatever is left in the cgroup), but they are NOT
+# restarted automatically: a failed start — a wedged NPU graph after a
+# crash, a missing model file — should surface as a dead unit, not a restart
+# loop hammering the hardware. A main `qb3rt-up`/`qb3rt-down` still stops
+# add-ons (qb3rt-down globs both unit types); only `qb3rt-up --addon` and
+# `qb3rt-down --addon` leave the other side alone.
+[Unit]
+Description=QB3rt add-on (%i.launch.py)
+Wants=network-online.target
+After=network-online.target sensor-service.service
+
+[Service]
+Type=exec
+User=ubuntu
+Group=ubuntu
+# Per-add-on launch arguments (QB3RT_LAUNCH_ARGS=...).
+# /run/qb3rt/addon-%i.env is written by `qb3rt-up --addon` for one-off args.
+EnvironmentFile=-/etc/qb3rt/addon-%i.env
+EnvironmentFile=-/run/qb3rt/addon-%i.env
+Environment=PYTHONUNBUFFERED=1
+Environment=RCUTILS_COLORIZED_OUTPUT=0
+ExecStartPre=/usr/local/lib/qb3rt/qb3rt-wait-net
+ExecStart=/usr/local/lib/qb3rt/qb3rt-stack-exec %i
+KillMode=mixed
+KillSignal=SIGINT
+TimeoutStartSec=60
+TimeoutStopSec=25
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

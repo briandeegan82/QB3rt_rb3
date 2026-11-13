@@ -1,7 +1,8 @@
 ---
-# qb3rt_stack: run the ROS 2 stack as a systemd service (qb3rt-stack@.service)
-# with qb3rt-up / qb3rt-down / qb3rt-status, so an SSH drop no longer leaves
-# orphaned nodes holding the serial ports and camera.
+# qb3rt_stack: run the ROS 2 stack as a systemd service (qb3rt-stack@.service,
+# plus qb3rt-addon@.service for launch files that run beside the stack via
+# `qb3rt-up --addon`) with qb3rt-up / qb3rt-down / qb3rt-status, so an SSH
+# drop no longer leaves orphaned nodes holding the serial ports and camera.
 - name: Ensure /usr/local/lib/qb3rt exists
   ansible.builtin.file:
     path: /usr/local/lib/qb3rt
@@ -31,13 +32,16 @@
     - qb3rt-down
     - qb3rt-status
 
-- name: Install qb3rt-stack@.service
+- name: Install the stack and add-on unit templates
   ansible.builtin.copy:
-    src: "{{ qb3rt_stack_system_dir }}/qb3rt-stack@.service"
-    dest: /etc/systemd/system/qb3rt-stack@.service
+    src: "{{ qb3rt_stack_system_dir }}/{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
     mode: "0644"
   become: true
   register: qb3rt_stack_unit
+  loop:
+    - qb3rt-stack@.service
+    - qb3rt-addon@.service
 
 - name: Reload systemd after a unit change
   ansible.builtin.systemd:

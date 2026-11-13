@@ -48,12 +48,18 @@ qb3rt-up -f odometry_bringup            # start and follow the journal
 qb3rt-status                            # running units + orphaned processes
 qb3rt-down                              # clean stop (SIGINT to ros2 launch)
 qb3rt-down --force                      # also reap orphans from old SSH launches
+qb3rt-up --addon yolo_npu model:=...    # run a launch file beside the stack
+qb3rt-down --addon yolo_npu             # stop just that add-on
 journalctl -u qb3rt-stack@full_stack -f
+journalctl -u qb3rt-addon@yolo_npu -f
 ```
 
 The profile is any launch file stem in the QB3rt package. Persistent launch
 arguments go in `/etc/qb3rt/stack-<profile>.env` as `QB3RT_LAUNCH_ARGS=...`.
 Nothing autostarts unless `qb3rt_stack_autostart_profile` is set in Ansible.
+`--addon` runs the launch file as a `qb3rt-addon@*` unit beside the running
+stack instead of stopping it — for extra nodes like YOLOE — while a plain
+`qb3rt-up`/`qb3rt-down` stops stack and add-ons alike.
 
 ## Hardware (per robot)
 

@@ -1,25 +1,55 @@
 #!/bin/bash
 # Start one QB3rt stack profile as a systemd service, stopping any other
 # profile and reaping orphans first (two stacks fight over the serial ports).
+# A main `qb3rt-up` stops add-on units too.
 #
 #   qb3rt-up full_stack                      start (default profile: full_stack)
 #   qb3rt-up full_stack enable_nav:=false    one-off launch arguments
 #   qb3rt-up -f odometry_bringup             start, then follow the journal
+#   qb3rt-up --addon yolo_npu model:=...     start an add-on beside the stack
+#
+# --addon runs the launch file as qb3rt-addon@<profile>.service without
+# touching the running stack or reaping strays; rerunning it restarts just
+# that add-on.
 #
 # Persistent per-profile arguments: QB3RT_LAUNCH_ARGS=... in
-# /etc/qb3rt/stack-<profile>.env (fleet-wide: /etc/qb3rt/stack.env).
+# /etc/qb3rt/stack-<profile>.env (fleet-wide: /etc/qb3rt/stack.env); add-ons
+# use /etc/qb3rt/addon-<profile>.env.
 set -euo pipefail
 # shellcheck source=qb3rt-common.sh
 source /usr/local/lib/qb3rt/qb3rt-common.sh
 
-follow=0
-if [ "${1:-}" = "-f" ] || [ "${1:-}" = "--follow" ]; then follow=1; shift; fi
-case "${1:-}" in -h|--help) sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 0 ;; esac
+follow=0 addon=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f|--follow) follow=1; shift ;;
+        -a|--addon) addon=1; shift ;;
+        *) break ;;
+    esac
+done
+case "${1:-}" in -h|--help) sed -n '2,17p' "$0" | sed 's/^# \?//'; exit 0 ;; esac
 profile="${1:-full_stack}"; shift || true
 profile="${profile%.launch.py}"
 
 share=/opt/qb3rt/install/share/QB3rt/launch
 [ -f "$share/$profile.launch.py" ] || { echo "no launch file $share/$profile.launch.py" >&2; exit 2; }
+
+if [ "$addon" -eq 1 ]; then
+    unit="qb3rt-addon@$profile.service"
+    # A live add-on instance gets restarted, not duplicated.
+    if systemctl is-active --quiet "$unit"; then
+        qb3rt_sudo systemctl stop "$unit"
+    fi
+    qb3rt_sudo mkdir -p /run/qb3rt
+    printf 'QB3RT_LAUNCH_ARGS=%s\n' "$*" | qb3rt_sudo tee "/run/qb3rt/addon-$profile.env" >/dev/null
+    qb3rt_sudo systemctl reset-failed "$unit" 2>/dev/null || true
+    qb3rt_sudo systemctl start "$unit"
+    echo "started qb3rt-addon@$profile${*:+ ($*)}; logs: journalctl -u qb3rt-addon@$profile -f"
+    mapfile -t strays < <(qb3rt_stray_pids)
+    [ "${#strays[@]}" -eq 0 ] || echo "note: ${#strays[@]} stack process(es) outside systemd (may hold the camera); run qb3rt-down --force to reap them" >&2
+    [ "$follow" -eq 1 ] && exec journalctl -u "qb3rt-addon@$profile" -f -n 50
+    exit 0
+fi
 
 /usr/local/bin/qb3rt-down --force
 
