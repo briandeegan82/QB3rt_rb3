@@ -1,0 +1,5 @@
+# QAIRT 2.50 side-by-side runtime files — extracted from the Qualcomm SDK zip
+# by fetch-qairt250.sh. Not committed (~110 MB).
+lib/
+dsp/
+bin/

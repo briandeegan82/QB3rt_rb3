@@ -1,0 +1,11 @@
+# Mission vocabulary baked into yoloe_mission_qa250.bin at export time
+# (--prompt-text "traffic cone, car, traffic light, pedestrian, cyclist, dog, cat").
+# Re-export the model to change classes — this file must match the prompt order.
+names:
+  0: traffic cone
+  1: car
+  2: traffic light
+  3: pedestrian
+  4: cyclist
+  5: dog
+  6: cat

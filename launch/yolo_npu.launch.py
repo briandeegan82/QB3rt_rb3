@@ -1,45 +1,57 @@
+import os
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    LogInfo,
+    OpaqueFunction,
+)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 from launch_ros.substitutions import FindPackageShare
 
+QAIRT250_DEFAULT_ROOT = "/opt/qairt-2.50"
+SYSTEM_QNN_HTP = "/usr/lib/libQnnHtp.so"
 
-def generate_launch_description():
-    """YOLOE open-vocabulary segmentation on the Hexagon NPU.
 
-    Pipeline (topics, all on-domain):
+def _resolve_qairt(context):
+    """Resolve the qairt launch arg to (backend .so path, extra env or None, arg)."""
+    arg = LaunchConfiguration("qairt").perform(context)
+    if arg == "system":
+        return SYSTEM_QNN_HTP, None, arg
+    if arg == "auto":
+        candidate = os.path.join(QAIRT250_DEFAULT_ROOT, "lib", "libQnnHtp.so")
+        root = QAIRT250_DEFAULT_ROOT if os.path.exists(candidate) else None
+    else:
+        root = arg
+    if root is None:
+        return SYSTEM_QNN_HTP, None, arg
+    backend = os.path.join(root, "lib", "libQnnHtp.so")
+    if not os.path.exists(backend):
+        raise RuntimeError(
+            f"yolo_npu: qairt:={arg} -> {backend} does not exist "
+            f"(expected <root>/lib/libQnnHtp.so)"
+        )
+    ld_path = [os.path.join(root, "lib")]
+    if os.environ.get("LD_LIBRARY_PATH"):
+        ld_path.append(os.environ["LD_LIBRARY_PATH"])
+    env = {
+        "LD_LIBRARY_PATH": ":".join(ld_path),
+        "ADSP_LIBRARY_PATH": os.path.join(root, "dsp")
+        + ";/usr/lib/dsp/cdsp;/usr/lib/rfsa/adsp;/dsp",
+    }
+    return backend, env, arg
 
-      cam0_stream1  (sensor_msgs/Image, NV12 from the IMX577 colour camera)
-        -> CvTensorCommonProcessNode   : resize/normalize -> qrb_inference_input_tensor
-        -> QrbRosInferenceNode         : QNN HTP (.bin)  -> yolo_segment_tensor_output
-        -> yoloe_seg_postprocess.py    : NMS + mask decode -> yoloe/detections
-        -> YoloSegOverlayNode (optional) -> yoloe/overlay
 
-    The .bin must be an AI Hub `yoloe_seg` qnn_context_binary compiled for the
-    RB3 Gen 2 (QCS6490, Hexagon V68). Bundled /opt/model/*.bin files are
-    compiled for V73 and do NOT run on this unit. AI Hub emits binaries built
-    with QAIRT 2.49+, which require the 2.49 qairt-libs/dsp-binaries upgrade
-    (stock noble apt ships 2.46, which both rejects the context blob version
-    and lacks MatMul in the V68 skel — see ansible qairt-2.49 deployment).
+def _nodes(context):
+    backend, env, qairt_arg = _resolve_qairt(context)
 
-      ros2 launch QB3rt yolo_npu.launch.py \\
-          model:=/home/ubuntu/models/yoloe_coco80_qa249.bin \\
-          label_file:=.../config/yoloe_coco80.yaml
-
-    For the lab-vocab model use yoloe_lab_qa249.bin + yoloe_lab.yaml. The vocabulary
-    is baked into the .bin at export time (--prompt-text); label_file must list
-    the same classes in the same order.
-    """
     input_image = LaunchConfiguration("input_image")
     enable_camera = LaunchConfiguration("enable_camera")
     model = LaunchConfiguration("model")
-    label_file = LaunchConfiguration("label_file")
-    quant_params_file = LaunchConfiguration("quant_params_file")
-    score_thres = LaunchConfiguration("score_thres")
-    iou_thres = LaunchConfiguration("iou_thres")
     enable_overlay = LaunchConfiguration("enable_overlay")
     use_sim_time = LaunchConfiguration("use_sim_time")
 
@@ -96,30 +108,12 @@ def generate_launch_description():
         name="nn_inference_node",
         parameters=[
             {"model_path": model},
-            {"backend_option": "/usr/lib/libQnnHtp.so"},
+            {"backend_option": backend},
             {"use_sim_time": use_sim_time},
         ],
         remappings=[
             ("qrb_inference_output_tensor", "yolo_segment_tensor_output"),
         ],
-    )
-
-    postprocess = ExecuteProcess(
-        cmd=[
-            "python3",
-            PathJoinSubstitution(
-                [FindPackageShare("QB3rt"), "scripts", "yoloe_seg_postprocess.py"]
-            ),
-            "--ros-args",
-            "-p", "input_topic:=yolo_segment_tensor_output",
-            "-p", "output_topic:=yoloe/detections",
-            "-p", ["label_file:=", label_file],
-            "-p", ["quant_params_file:=", quant_params_file],
-            "-p", ["score_thres:=", score_thres],
-            "-p", ["iou_thres:=", iou_thres],
-            "-p", ["use_sim_time:=", use_sim_time],
-        ],
-        output="screen",
     )
 
     overlay = ComposableNode(
@@ -138,6 +132,83 @@ def generate_launch_description():
             ("yolo_segment_overlay", "yoloe/overlay"),
         ],
         condition=IfCondition(enable_overlay),
+    )
+
+    container_env = env if env else {}
+    return [
+        LogInfo(msg=f"yolo_npu: QAIRT backend {backend} (qairt:={qairt_arg})"),
+        ComposableNodeContainer(
+            name="yoloe_npu_container",
+            namespace="",
+            package="rclcpp_components",
+            executable="component_container",
+            composable_node_descriptions=[camera, preprocess, inference, overlay],
+            additional_env=container_env,
+            output="screen",
+        ),
+    ]
+
+
+def generate_launch_description():
+    """YOLOE open-vocabulary segmentation on the Hexagon NPU.
+
+    Pipeline (topics, all on-domain):
+
+      cam0_stream1  (sensor_msgs/Image, NV12 from the IMX577 colour camera)
+        -> CvTensorCommonProcessNode   : resize/normalize -> qrb_inference_input_tensor
+        -> QrbRosInferenceNode         : QNN HTP (.bin)  -> yolo_segment_tensor_output
+        -> yoloe_seg_postprocess.py    : NMS + mask decode -> yoloe/detections
+        -> YoloSegOverlayNode (optional) -> yoloe/overlay
+
+    The .bin must be an AI Hub `yoloe_seg` qnn_context_binary compiled for the
+    RB3 Gen 2 (QCS6490, Hexagon V68). Bundled /opt/model/*.bin files are
+    compiled for V73 and do NOT run on this unit.
+
+    QAIRT runtime: AI Hub exports are now built with QAIRT 2.50, which the
+    packaged 2.49 runtime refuses ("Using newer context binary on old SDK"),
+    so the fleet also carries a side-by-side 2.50 stack under
+    /opt/qairt-2.50 (installed by qb3rt_base, not a system package). The
+    `qairt` launch arg selects the runtime:
+
+      auto    (default) use /opt/qairt-2.50 if it has lib/libQnnHtp.so,
+              else the system runtime in /usr/lib
+      system  force /usr/lib/libQnnHtp.so with no env changes
+      <dir>   explicit QAIRT root containing lib/ and dsp/
+
+    A non-system root also sets LD_LIBRARY_PATH=<root>/lib and
+    ADSP_LIBRARY_PATH=<root>/dsp;... on the container so the DSP skels come
+    from the same stack. The resolved backend is logged at startup.
+
+      ros2 launch QB3rt yolo_npu.launch.py \\
+          model:=/home/ubuntu/models/yoloe_coco80_qa249.bin \\
+          label_file:=.../config/yoloe_coco80.yaml
+
+    For the lab-vocab model use yoloe_lab_qa249.bin + yoloe_lab.yaml. The vocabulary
+    is baked into the .bin at export time (--prompt-text); label_file must list
+    the same classes in the same order.
+    """
+    label_file = LaunchConfiguration("label_file")
+    quant_params_file = LaunchConfiguration("quant_params_file")
+    score_thres = LaunchConfiguration("score_thres")
+    iou_thres = LaunchConfiguration("iou_thres")
+    use_sim_time = LaunchConfiguration("use_sim_time")
+
+    postprocess = ExecuteProcess(
+        cmd=[
+            "python3",
+            PathJoinSubstitution(
+                [FindPackageShare("QB3rt"), "scripts", "yoloe_seg_postprocess.py"]
+            ),
+            "--ros-args",
+            "-p", "input_topic:=yolo_segment_tensor_output",
+            "-p", "output_topic:=yoloe/detections",
+            "-p", ["label_file:=", label_file],
+            "-p", ["quant_params_file:=", quant_params_file],
+            "-p", ["score_thres:=", score_thres],
+            "-p", ["iou_thres:=", iou_thres],
+            "-p", ["use_sim_time:=", use_sim_time],
+        ],
+        output="screen",
     )
 
     return LaunchDescription(
@@ -178,14 +249,15 @@ def generate_launch_description():
             DeclareLaunchArgument("iou_thres", default_value="0.45"),
             DeclareLaunchArgument("enable_overlay", default_value="false"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
-            ComposableNodeContainer(
-                name="yoloe_npu_container",
-                namespace="",
-                package="rclcpp_components",
-                executable="component_container",
-                composable_node_descriptions=[camera, preprocess, inference, overlay],
-                output="screen",
+            DeclareLaunchArgument(
+                "qairt",
+                default_value="auto",
+                description="QAIRT runtime: 'auto' uses /opt/qairt-2.50 when "
+                "present else the system runtime; 'system' forces "
+                "/usr/lib/libQnnHtp.so; any other value is a QAIRT root dir "
+                "with lib/ and dsp/ subdirs.",
             ),
+            OpaqueFunction(function=_nodes),
             postprocess,
         ]
     )

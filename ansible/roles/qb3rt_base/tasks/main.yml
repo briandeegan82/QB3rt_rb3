@@ -278,6 +278,7 @@
   register: qb3rt_base_qairt_version
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Install QAIRT 2.49 (deps covered by qcom-fastrpc1)
   ansible.builtin.command: >-
@@ -341,9 +342,82 @@
     - libQnnSaver.so
   notify: restart cdsprpcd
 
+# --- QAIRT 2.50 side-by-side runtime ------------------------------------------
+# AI Hub no longer offers QAIRT 2.49, so new yoloe_seg exports build 2.50
+# context binaries that the packaged 2.49 runtime refuses ("Using newer
+# context binary on old SDK"). The qcom-ppa has no 2.50 debs, so the SDK's
+# runtime files are staged under files/qairt250/ once on the control host:
+#   ansible/roles/qb3rt_base/files/qairt250/fetch-qairt250.sh
+# and copied here to a side-by-side root. Nothing under /usr or the 2.49
+# packages is touched; yolo_npu.launch.py picks this up via qairt:=auto.
+- name: Check QAIRT 2.50 staging on the control host
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/qairt250/{{ item }}"
+  delegate_to: localhost
+  register: qb3rt_base_qairt250_staged
+  when: qb3rt_base_qairt250_dir != ""
+  loop:
+    - lib/libQnnGraphTransformer.so
+    - lib/libQnnHtpNetRunExtensions.so
+    - lib/libQnnHtpPrepare.so
+    - lib/libQnnHtp.so
+    - lib/libQnnHtpV68CalculatorStub.so
+    - lib/libQnnHtpV68Stub.so
+    - lib/libQnnIr.so
+    - lib/libQnnModelDlc.so
+    - lib/libQnnSaver.so
+    - lib/libQnnSystem.so
+    - dsp/libQnnHexagonSkel_dspApp.so
+    - dsp/libQnnHtpNetRunExtensions.so
+    - dsp/libQnnHtpV68QemuDriver.so
+    - dsp/libQnnHtpV68Skel.so
+    - dsp/libQnnHtpV68.so
+    - dsp/libQnnNetRunDirectV68Skel.so
+    - dsp/libQnnSaver.so
+    - dsp/libQnnSystem.so
+    - bin/qnn-context-binary-utility
+
+- name: Ensure QAIRT 2.50 root and subdirs exist
+  ansible.builtin.file:
+    path: "{{ qb3rt_base_qairt250_dir }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: qb3rt_base_qairt250_dir != ""
+  loop:
+    - ""
+    - lib
+    - dsp
+    - bin
+
+- name: Copy QAIRT 2.50 runtime files to the unit
+  ansible.builtin.copy:
+    src: "{{ role_path }}/files/qairt250/{{ item.item }}"
+    dest: "{{ qb3rt_base_qairt250_dir }}/{{ item.item }}"
+    owner: root
+    group: root
+    mode: "{{ '0755' if (item.item | dirname) == 'bin' else '0644' }}"
+  become: true
+  when: qb3rt_base_qairt250_dir != "" and item.stat.exists
+  loop: "{{ qb3rt_base_qairt250_staged.results }}"
+
+- name: Warn when QAIRT 2.50 is not staged on the control host
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: no QAIRT 2.50 files staged in files/qairt250/ —
+      run files/qairt250/fetch-qairt250.sh once on the control host; units
+      keep using the system QAIRT 2.49.
+  when: >-
+    qb3rt_base_qairt250_dir != "" and not
+    (qb3rt_base_qairt250_staged.results | selectattr('stat.exists') | list)
+
 # --- YOLOE model artifacts ----------------------------------------------------
-# AI Hub yoloe_seg context binaries (QAIRT 2.49 / V68). Not in git (~92 MB) —
-# stage them once on the control host:
+# AI Hub yoloe_seg context binaries (V68). The coco80/lab bins are QAIRT 2.49
+# builds; yoloe_mission_qa250.bin is a QAIRT 2.50 build and runs via the
+# side-by-side runtime staged by the qairt250 block above (qairt:=auto).
+# Not in git (~140 MB) — stage them once on the control host:
 #   ansible/roles/qb3rt_base/files/yoloe/fetch-yoloe-models.sh
 # The matching vocab/quant sidecars (config/yoloe_*.yaml) ship in the QB3rt
 # payload via update_project.sh; only the .bins come through here.
@@ -355,6 +429,7 @@
   loop:
     - yoloe_coco80_qa249.bin
     - yoloe_lab_qa249.bin
+    - yoloe_mission_qa250.bin
 
 - name: Ensure /home/ubuntu/models exists (ubuntu-owned)
   ansible.builtin.file:

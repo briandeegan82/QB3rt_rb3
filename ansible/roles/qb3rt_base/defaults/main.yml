@@ -16,3 +16,7 @@ qb3rt_base_default_domain_id: "0"
 # Empty = keep the fleet default in cyclonedds.xml (192.168.0.101). Set it per
 # network in inventory group vars, e.g. [qb3rt_odd:vars] qb3rt_dds_peer=192.168.1.100
 qb3rt_dds_peer: ""
+
+# Side-by-side QAIRT 2.50 runtime root on the units (AI Hub dropped 2.49).
+# Empty = don't deploy the 2.50 stack.
+qb3rt_base_qairt250_dir: /opt/qairt-2.50

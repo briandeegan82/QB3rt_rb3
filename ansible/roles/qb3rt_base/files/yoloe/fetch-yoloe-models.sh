@@ -1,7 +1,9 @@
 #!/bin/bash
 # Stage the YOLOE QNN context binaries into this directory for Ansible
 # deployment. Source of truth on the dev laptop: ~/QB3rt_rb3/models/
-# (AI Hub yoloe_seg exports, QAIRT 2.49 toolchain, V68/QCS6490).
+# (AI Hub yoloe_seg exports, V68/QCS6490). The coco80/lab bins are QAIRT 2.49
+# builds; yoloe_mission_qa250.bin is a QAIRT 2.50 build and needs the
+# side-by-side runtime under /opt/qairt-2.50 (files/qairt250/).
 #
 #   ansible/roles/qb3rt_base/files/yoloe/fetch-yoloe-models.sh
 set -euo pipefail
@@ -9,7 +11,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="${YOLOE_MODELS_DIR:-$HOME/QB3rt_rb3/models}"
 
-for m in yoloe_coco80_qa249.bin yoloe_lab_qa249.bin; do
+for m in yoloe_coco80_qa249.bin yoloe_lab_qa249.bin yoloe_mission_qa250.bin; do
     # Files live in per-model subdirs (yoloe_coco80/, yoloe_lab/).
     found="$(find "$SRC" -name "$m" -type f | head -1)"
     [ -n "$found" ] || { echo "ERROR: $m not found under $SRC" >&2; exit 1; }
