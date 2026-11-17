@@ -1,3 +1,4 @@
-# Model binaries are large (~46 MB each) — not committed.
-# Stage them with ../fetch-yoloe-models.sh (or stage-yoloe-models.sh beside it).
+# COCO-80 and lab model binaries (~46 MB each) — stage with fetch-yoloe-models.sh.
+# yoloe_mission_qa250.bin is tracked so student laptops have it after git clone.
 *.bin
+!yoloe_mission_qa250.bin

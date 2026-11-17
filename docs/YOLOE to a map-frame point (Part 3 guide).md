@@ -54,10 +54,134 @@ cat $C/yoloe_mission.yaml $C/yoloe_mission_quant.yaml
 qb3rt-status                                  # full_stack running, no yolo_npu add-on yet, no orphans
 ```
 
-If `/scan` and `/tf` don't show up, start the robot's base stack with `qb3rt-up full_stack`, then rerun the checklist. If the mission bin, `/opt/qairt-2.50` or the `qairt` argument is missing, the robot hasn't had the latest update: ask a demonstrator. `$C` only lasts for that shell, so set it again in any new terminal.
+If `/scan` and `/tf` don't show up, start the robot's base stack with `qb3rt-up full_stack`, then rerun the checklist. If the mission bin, `/opt/qairt-2.50`, the `qairt` argument or the `yoloe_mission*.yaml` files are missing, the robot hasn't had the QAIRT 2.50 update. You can install it yourself: see *Upgrade a unit to QAIRT 2.50 yourself* below. `$C` only lasts for that shell, so set it again in any new terminal.
 
 - **Architecture check.** The fleet's DSP is V68. A model exported for V73 fails to load with `Request feature arch with value 73 unsupported` — if you get an `Inference graph init fail` right at startup, that's the first suspect. A 2.50 model on a unit without `/opt/qairt-2.50` (or launched with `qairt:=system`) fails with `Using newer context binary on old SDK` followed by `Inference graph init fail`; check the QAIRT backend line in `journalctl -u qb3rt-addon@yolo_npu`. If the mission model won't load, fall back to `yoloe_coco80_qa249.bin` (known-good V68 build) to prove the pipeline while the model is rebuilt.
 - **The label file must list classes in the same order the model was exported with**, because the localiser's `target` parameter (step 9) is compared against the published names. Any detection index missing from the file is published as a bare number string, so a misaligned label file fails *silently*.
+
+### Upgrade a unit to QAIRT 2.50 yourself
+
+Skip this if the 1a checklist passed. Do it if any of these are missing: `yoloe_mission_qa250.bin`, `/opt/qairt-2.50/lib/libQnnHtp.so`, the `qairt` launch argument, or `yoloe_mission.yaml` and `yoloe_mission_quant.yaml` in `$C`. The mission model needs all three of the pieces below, so install all three even if only one looks missing:
+
+| Piece | Goes to (robot) | Comes from |
+| --- | --- | --- |
+| QB3rt payload: `yolo_npu.launch.py` with the `qairt` argument, the mission label and quant YAMLs, and the current `qb3rt-up` / `qb3rt-down` / `qb3rt-status` | `/opt/qb3rt/install/share/QB3rt`, `/usr/local/bin` | The public QB3rt repo, pushed by `deploy/update_project.sh` |
+| QAIRT 2.50 runtime, about 110 MB of libraries | `/opt/qairt-2.50/{lib,dsp,bin}` | Qualcomm's public QAIRT SDK zip (about 2.6 GB, no account needed), extracted by `fetch-qairt250.sh` |
+| Mission model | `/home/ubuntu/models/yoloe_mission_qa250.bin` | The public QB3rt repo (`ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin`) |
+
+This is the same install the demonstrators' Ansible run does, with the same paths and permissions, so a later fleet update won't conflict with it. It doesn't touch the system QAIRT 2.49 packages, so the COCO and lab models keep working. To undo it, run `sudo rm -rf /opt/qairt-2.50` on the robot; `qairt:=auto` then falls back to the system runtime.
+
+Run steps 1 to 5 on your laptop, which must be on the same network as the robot. You need Linux, or WSL on Windows, with `git`, `rsync`, `curl`, `unzip` and `sha256sum`, and about 3 GB of free disk. On the robot you only need the `ubuntu` login, which already has passwordless sudo.
+
+1. **Set up SSH and stop the stack.** `update_project.sh` opens about a dozen SSH connections, so install a key first or you will type the password at every one:
+
+   ```bash
+   U=ubuntu@<unit-ip>
+   ls ~/.ssh/id_*.pub || ssh-keygen -t ed25519     # make a key if you have none
+   ssh-copy-id $U                                  # once per robot
+   ssh $U qb3rt-down
+   ```
+
+   `$U` only lasts for that shell, like `$C`.
+
+2. **Update the QB3rt payload.** Get the repo, back up what the update overwrites, preview the changes, then run it:
+
+   ```bash
+   git clone https://github.com/briandeegan82/QB3rt_rb3.git ~/QB3rt_rb3   # or, if you have it: git -C ~/QB3rt_rb3 pull
+   cd ~/QB3rt_rb3
+   ```
+
+   **Back up** everything `update_project.sh` replaces, into one file in the robot's home directory (about 0.5 MB):
+
+   ```bash
+   ssh $U 'cd / && sudo tar -czf /home/ubuntu/qb3rt-backup-before-qairt250.tgz \
+     opt/qb3rt/install/share/QB3rt \
+     opt/qb3rt/install/lib/wave_rover_controller/wave_rover_bridge.py \
+     opt/qb3rt/install/share/wave_rover_controller/config/wave_rover_bridge.yaml \
+     etc/qb3rt/cyclonedds.xml etc/profile.d/qb3rt-ros-env.sh \
+     etc/sysctl.d/98-agv-dds.conf etc/udev/rules.d/80-movidius.rules \
+     usr/local/bin/qb3rt-up usr/local/bin/qb3rt-down usr/local/bin/qb3rt-status usr/local/lib/qb3rt \
+     etc/systemd/system/qb3rt-stack@.service etc/systemd/system/qb3rt-addon@.service &&
+     sudo chown ubuntu:ubuntu /home/ubuntu/qb3rt-backup-before-qairt250.tgz'
+   ```
+
+   **Preview** what the update would do to the project files. This changes nothing on the robot:
+
+   ```bash
+   for d in launch config urdf scripts behavior_trees rviz docs; do
+     rsync -rcn --delete -i --exclude=__pycache__ $d/ $U:/opt/qb3rt/install/share/QB3rt/$d/ | sed "s|^|$d/: |"
+   done
+   ```
+
+   Each line is one file: `<f+++++++++` is a new file, `<fcsT......` is a file whose contents will change, and `*deleting` is a file that will be **removed**. No output means nothing changes. Expect changes in `launch/`, `config/` and `docs/` on a unit that hasn't been updated. Look hard at any `*deleting` line, and at any changed file you remember editing: that's your work. Copy it to your home directory before going on. Any change in `launch/lidar_nav.launch.py` is the Part 2 fix that stops AMCL running alongside slam\_toolbox, so if your Part 2 Nav2 tuning was done without it, recheck the tuning afterwards.
+
+   **Run the update:**
+
+   ```bash
+   deploy/update_project.sh --host $U
+   ```
+
+   It mirrors `launch/`, `config/`, `scripts/` and the other project directories into `/opt/qb3rt/install/share/QB3rt` **with delete**, exactly as the preview showed. Keep your own files in your home directory on the robot, as steps 1d and 2 already ask. It also replaces the fleet's DDS and ROS environment files under `/etc`, the rover bridge and the `qb3rt-*` commands. Your unit's own settings aren't touched: domain ID, DDS peer, `drive_inverted` and `lidar_yaw` in `/etc/qb3rt/unit_conventions.yaml`, the serial udev rules and Wi-Fi. It finishes by running `qb3rt-status`.
+
+   To **undo** it, restore the backup on the robot (`ssh $U`, then):
+
+   ```bash
+   cd / && sudo tar --warning=no-timestamp -xzf /home/ubuntu/qb3rt-backup-before-qairt250.tgz && sudo systemctl daemon-reload
+   ```
+
+   This puts every backed-up file back as it was. Files the update *added* stay, but nothing old refers to them.
+
+3. **Fetch the QAIRT 2.50 runtime.** Still in `~/QB3rt_rb3`:
+
+   ```bash
+   QAIRT_ZIP=~/Downloads/qairt-v2.50.0.260828.zip \
+     ansible/roles/qb3rt_base/files/qairt250/fetch-qairt250.sh
+   ```
+
+   The script downloads the SDK from Qualcomm's Software Center to `QAIRT_ZIP`, resuming if the CDN stalls, and checks its SHA-256. It then extracts the 19 runtime files into `ansible/roles/qb3rt_base/files/qairt250/{lib,dsp,bin}/` (git ignores them) and lists them. If a classmate already has the zip, point `QAIRT_ZIP` at their copy and the download is skipped; the checksum is still verified. If the checksum fails, delete the zip and run the script again.
+
+4. **Install the runtime on the robot:**
+
+   ```bash
+   Q=ansible/roles/qb3rt_base/files/qairt250
+   rsync -rz $Q/lib $Q/dsp $Q/bin $U:/tmp/qairt-2.50/
+   ssh $U 'sudo sh -c "
+     for d in lib dsp bin; do install -d -m 0755 /opt/qairt-2.50/\$d; done &&
+     install -m 0644 /tmp/qairt-2.50/lib/* /opt/qairt-2.50/lib/ &&
+     install -m 0644 /tmp/qairt-2.50/dsp/* /opt/qairt-2.50/dsp/ &&
+     install -m 0755 /tmp/qairt-2.50/bin/* /opt/qairt-2.50/bin/" && rm -rf /tmp/qairt-2.50'
+   ```
+
+   No daemon restart is needed: the launch file points only the YOLOE container at these libraries, through `LD_LIBRARY_PATH` and `ADSP_LIBRARY_PATH`.
+
+5. **Install the mission model.** Still in `~/QB3rt_rb3`, check the checksum of `yoloe_mission_qa250.bin` from the repo (or download it from [GitHub](https://github.com/briandeegan82/QB3rt_rb3/raw/main/ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin)) and copy it to the robot:
+
+   ```bash
+   M=ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin
+   sha256sum $M
+   # must print 3f4ab2047ac863f1a2da80c88cd17a14378f9b12b9b2380db4265bca8dad1aaf
+   ssh $U 'mkdir -p /home/ubuntu/models'
+   rsync -z $M $U:/home/ubuntu/models/
+   ```
+
+   If you exported your own model in step 1d, you still need steps 1 to 4; only this step changes.
+
+6. **Verify on the robot.** Log in with an interactive `ssh $U`, start the base stack with `qb3rt-up full_stack`, and run the whole 1a checklist again: every line should now pass. Two further checks:
+
+   ```bash
+   strings -n 6 /home/ubuntu/models/yoloe_mission_qa250.bin \
+     | grep -oE "v2\.[0-9]{2}\.[0-9]+\.[0-9]{6,}" | sort -u     # v2.50.0.260828221209: a 2.50 build
+   ls -l /opt/qairt-2.50/lib /opt/qairt-2.50/dsp /opt/qairt-2.50/bin   # 10 + 8 + 1 files, owned by root
+   ```
+
+   Then launch the mission model as in 1b and look for the backend line:
+
+   ```bash
+   journalctl -u qb3rt-addon@yolo_npu | grep 'QAIRT backend'
+   # yolo_npu: QAIRT backend /opt/qairt-2.50/lib/libQnnHtp.so (qairt:=auto)
+   ```
+
+   If the line names `/usr/lib/libQnnHtp.so`, or the log shows `Using newer context binary on old SDK`, the launch didn't find `/opt/qairt-2.50/lib/libQnnHtp.so`: redo step 4. If `ros2 launch QB3rt yolo_npu.launch.py --show-args` has no `qairt` argument, step 2 didn't reach the robot: check its output for errors. Once the backend line is right, carry on with 1b and 1c.
 
 ### 1b. Launch
 
@@ -934,7 +1058,7 @@ Run these in a shell on the robot (an interactive `ssh` login is fine). A one-sh
 | What you see | Usually | Try |
 | --- | --- | --- |
 | No detections at all | YOLOE isn't running, the object isn't in view, or the score threshold is too high | `ros2 topic hz /yoloe/detections` with the object in front; lower the `score_thres` launch argument (the detector's threshold, separate from the localiser's `min_score`) while testing |
-| `Inference graph init fail` / `Failed to find graph` at launch | Model built for the wrong arch (V73 vs V68), a 2.50 model on the 2.49 runtime (`Using newer context binary on old SDK`), or a previous crash left the DSP graph wedged | Try `yoloe_coco80_qa249.bin` (1a); check the QAIRT backend log line (1a); for a wedged graph see 1b |
+| `Inference graph init fail` / `Failed to find graph` at launch | Model built for the wrong arch (V73 vs V68), a 2.50 model on the 2.49 runtime (`Using newer context binary on old SDK`), or a previous crash left the DSP graph wedged | Try `yoloe_coco80_qa249.bin` (1a); check the QAIRT backend log line (1a); if `/opt/qairt-2.50` is missing, install it (*Upgrade a unit to QAIRT 2.50 yourself*, after 1a); for a wedged graph see 1b |
 | Whole YOLOE pipeline died at once | `enable_overlay:=true` crashed on an out-of-bounds box — it takes the container (camera + inference) with it | `qb3rt-status` shows the add-on is down; rerun `qb3rt-up --addon ...` with `enable_overlay:=false` (the settle wait is built in) |
 | Localiser exits at startup | `intrinsics`, `distortion` or `room2_limits` not set or the wrong length | The fatal log line names the parameter |
 | Detections but never a report | Target name doesn't match, or a TF error | Read the node's log; print the class names and compare them as strings |
