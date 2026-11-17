@@ -66,7 +66,7 @@ def fig_pipeline():
     # --- camera branch (top row) ---
     box(ax, 1.15, 4.85, 1.95, 0.85, "IMX577\n1920x1080", ec=BLUE, fc="#EAF3FA")
     box(ax, 3.60, 4.85, 1.70, 0.85, "resize\n640x640", ec=BLUE, fc="#EAF3FA")
-    box(ax, 6.15, 4.85, 2.25, 0.85, "YOLOE\n(NPU, ~14 Hz)", ec=BLUE, fc="#EAF3FA")
+    box(ax, 6.15, 4.85, 2.25, 0.85, "YOLOE\n(NPU, ~12 Hz)", ec=BLUE, fc="#EAF3FA")
     box(ax, 6.15, 3.55, 2.75, 0.72, "/yoloe/detections", ec=BLUE, fc="white")
     arrow(ax, (2.15, 4.85), (2.73, 4.85), BLUE)
     arrow(ax, (4.47, 4.85), (5.00, 4.85), BLUE)

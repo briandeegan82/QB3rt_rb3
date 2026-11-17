@@ -18,7 +18,7 @@ The QB3rt repo already gives you the detector. `launch/yolo_npu.launch.py` runs 
 
 ![Dataflow: IMX577 → resize → YOLOE (NPU) → /yoloe/detections; /scan and /tf also feed the localiser, which publishes /mission/object_location](figures/part3/part3_pipeline.png)
 
-Assumptions in this guide, which I haven't run on a robot:
+Setup notes for this guide:
 
 - The robots ship a mission model, `yoloe_mission_qa250.bin`, whose vocabulary covers the **target — "traffic cone" — plus the other objects present: "car", "traffic light", "pedestrian", "cyclist", "dog", "cat"**. Detecting the non-target objects too is useful: their detections are evidence the pipeline is healthy, and the localiser ignores them, since it reports only the target. Exporting your own model is optional (step 1d).
 - The IMX577 (camera_id 0) is the wide-angle colour camera — the OV9282 is mono and can't feed this pipeline anyway. A `camera_info_imx577.yaml` ships on the robot, but treat its numbers as placeholders and calibrate the camera yourself (step 2).
@@ -54,138 +54,14 @@ cat $C/yoloe_mission.yaml $C/yoloe_mission_quant.yaml
 qb3rt-status                                  # full_stack running, no yolo_npu add-on yet, no orphans
 ```
 
-If `/scan` and `/tf` don't show up, start the robot's base stack with `qb3rt-up full_stack`, then rerun the checklist. If the mission bin, `/opt/qairt-2.50`, the `qairt` argument or the `yoloe_mission*.yaml` files are missing, the robot hasn't had the QAIRT 2.50 update. You can install it yourself: see *Upgrade a unit to QAIRT 2.50 yourself* below. `$C` only lasts for that shell, so set it again in any new terminal.
+If `/scan` and `/tf` don't show up, start the robot's base stack with `qb3rt-up full_stack`, then rerun the checklist. If the mission bin, `/opt/qairt-2.50`, the `qairt` argument or the `yoloe_mission*.yaml` files are missing, the robot hasn't had the QAIRT 2.50 update. You can install it yourself: see [Appendix: Upgrade a unit to QAIRT 2.50 yourself](#appendix-upgrade-a-unit-to-qairt-250-yourself) at the end of this guide. `$C` only lasts for that shell, so set it again in any new terminal.
 
 - **Architecture check.** The fleet's DSP is V68. A model exported for V73 fails to load with `Request feature arch with value 73 unsupported` — if you get an `Inference graph init fail` right at startup, that's the first suspect. A 2.50 model on a unit without `/opt/qairt-2.50` (or launched with `qairt:=system`) fails with `Using newer context binary on old SDK` followed by `Inference graph init fail`; check the QAIRT backend line in `journalctl -u qb3rt-addon@yolo_npu`. If the mission model won't load, fall back to `yoloe_coco80_qa249.bin` (known-good V68 build) to prove the pipeline while the model is rebuilt.
 - **The label file must list classes in the same order the model was exported with**, because the localiser's `target` parameter (step 9) is compared against the published names. Any detection index missing from the file is published as a bare number string, so a misaligned label file fails *silently*.
 
-### Upgrade a unit to QAIRT 2.50 yourself
-
-Skip this if the 1a checklist passed. Do it if any of these are missing: `yoloe_mission_qa250.bin`, `/opt/qairt-2.50/lib/libQnnHtp.so`, the `qairt` launch argument, or `yoloe_mission.yaml` and `yoloe_mission_quant.yaml` in `$C`. The mission model needs all three of the pieces below, so install all three even if only one looks missing:
-
-| Piece | Goes to (robot) | Comes from |
-| --- | --- | --- |
-| QB3rt payload: `yolo_npu.launch.py` with the `qairt` argument, the mission label and quant YAMLs, and the current `qb3rt-up` / `qb3rt-down` / `qb3rt-status` | `/opt/qb3rt/install/share/QB3rt`, `/usr/local/bin` | The public QB3rt repo, pushed by `deploy/update_project.sh` |
-| QAIRT 2.50 runtime, about 110 MB of libraries | `/opt/qairt-2.50/{lib,dsp,bin}` | Qualcomm's public QAIRT SDK zip (about 2.6 GB, no account needed), extracted by `fetch-qairt250.sh` |
-| Mission model | `/home/ubuntu/models/yoloe_mission_qa250.bin` | The public QB3rt repo (`ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin`) |
-
-This is the same install the demonstrators' Ansible run does, with the same paths and permissions, so a later fleet update won't conflict with it. It doesn't touch the system QAIRT 2.49 packages, so the COCO and lab models keep working. To undo it, run `sudo rm -rf /opt/qairt-2.50` on the robot; `qairt:=auto` then falls back to the system runtime.
-
-Run steps 1 to 5 on your laptop, which must be on the same network as the robot. You need Linux, or WSL on Windows, with `git`, `rsync`, `curl`, `unzip` and `sha256sum`, and about 3 GB of free disk. On the robot you only need the `ubuntu` login, which already has passwordless sudo.
-
-1. **Set up SSH and stop the stack.** `update_project.sh` opens about a dozen SSH connections, so install a key first or you will type the password at every one:
-
-   ```bash
-   U=ubuntu@<unit-ip>
-   ls ~/.ssh/id_*.pub || ssh-keygen -t ed25519     # make a key if you have none
-   ssh-copy-id $U                                  # once per robot
-   ssh $U qb3rt-down
-   ```
-
-   `$U` only lasts for that shell, like `$C`.
-
-2. **Update the QB3rt payload.** Get the repo, back up what the update overwrites, preview the changes, then run it:
-
-   ```bash
-   git clone https://github.com/briandeegan82/QB3rt_rb3.git ~/QB3rt_rb3   # or, if you have it: git -C ~/QB3rt_rb3 pull
-   cd ~/QB3rt_rb3
-   ```
-
-   **Back up** everything `update_project.sh` replaces, into one file in the robot's home directory (about 0.5 MB):
-
-   ```bash
-   ssh $U 'cd / && sudo tar -czf /home/ubuntu/qb3rt-backup-before-qairt250.tgz \
-     opt/qb3rt/install/share/QB3rt \
-     opt/qb3rt/install/lib/wave_rover_controller/wave_rover_bridge.py \
-     opt/qb3rt/install/share/wave_rover_controller/config/wave_rover_bridge.yaml \
-     etc/qb3rt/cyclonedds.xml etc/profile.d/qb3rt-ros-env.sh \
-     etc/sysctl.d/98-agv-dds.conf etc/udev/rules.d/80-movidius.rules \
-     usr/local/bin/qb3rt-up usr/local/bin/qb3rt-down usr/local/bin/qb3rt-status usr/local/lib/qb3rt \
-     etc/systemd/system/qb3rt-stack@.service etc/systemd/system/qb3rt-addon@.service &&
-     sudo chown ubuntu:ubuntu /home/ubuntu/qb3rt-backup-before-qairt250.tgz'
-   ```
-
-   **Preview** what the update would do to the project files. This changes nothing on the robot:
-
-   ```bash
-   for d in launch config urdf scripts behavior_trees rviz docs; do
-     rsync -rcn --delete -i --exclude=__pycache__ $d/ $U:/opt/qb3rt/install/share/QB3rt/$d/ | sed "s|^|$d/: |"
-   done
-   ```
-
-   Each line is one file: `<f+++++++++` is a new file, `<fcsT......` is a file whose contents will change, and `*deleting` is a file that will be **removed**. No output means nothing changes. Expect changes in `launch/`, `config/` and `docs/` on a unit that hasn't been updated. Look hard at any `*deleting` line, and at any changed file you remember editing: that's your work. Copy it to your home directory before going on. Any change in `launch/lidar_nav.launch.py` is the Part 2 fix that stops AMCL running alongside slam\_toolbox, so if your Part 2 Nav2 tuning was done without it, recheck the tuning afterwards.
-
-   **Run the update:**
-
-   ```bash
-   deploy/update_project.sh --host $U
-   ```
-
-   It mirrors `launch/`, `config/`, `scripts/` and the other project directories into `/opt/qb3rt/install/share/QB3rt` **with delete**, exactly as the preview showed. Keep your own files in your home directory on the robot, as steps 1d and 2 already ask. It also replaces the fleet's DDS and ROS environment files under `/etc`, the rover bridge and the `qb3rt-*` commands. Your unit's own settings aren't touched: domain ID, DDS peer, `drive_inverted` and `lidar_yaw` in `/etc/qb3rt/unit_conventions.yaml`, the serial udev rules and Wi-Fi. It finishes by running `qb3rt-status`.
-
-   To **undo** it, restore the backup on the robot (`ssh $U`, then):
-
-   ```bash
-   cd / && sudo tar --warning=no-timestamp -xzf /home/ubuntu/qb3rt-backup-before-qairt250.tgz && sudo systemctl daemon-reload
-   ```
-
-   This puts every backed-up file back as it was. Files the update *added* stay, but nothing old refers to them.
-
-3. **Fetch the QAIRT 2.50 runtime.** Still in `~/QB3rt_rb3`:
-
-   ```bash
-   QAIRT_ZIP=~/Downloads/qairt-v2.50.0.260828.zip \
-     ansible/roles/qb3rt_base/files/qairt250/fetch-qairt250.sh
-   ```
-
-   The script downloads the SDK from Qualcomm's Software Center to `QAIRT_ZIP`, resuming if the CDN stalls, and checks its SHA-256. It then extracts the 19 runtime files into `ansible/roles/qb3rt_base/files/qairt250/{lib,dsp,bin}/` (git ignores them) and lists them. If a classmate already has the zip, point `QAIRT_ZIP` at their copy and the download is skipped; the checksum is still verified. If the checksum fails, delete the zip and run the script again.
-
-4. **Install the runtime on the robot:**
-
-   ```bash
-   Q=ansible/roles/qb3rt_base/files/qairt250
-   rsync -rz $Q/lib $Q/dsp $Q/bin $U:/tmp/qairt-2.50/
-   ssh $U 'sudo sh -c "
-     for d in lib dsp bin; do install -d -m 0755 /opt/qairt-2.50/\$d; done &&
-     install -m 0644 /tmp/qairt-2.50/lib/* /opt/qairt-2.50/lib/ &&
-     install -m 0644 /tmp/qairt-2.50/dsp/* /opt/qairt-2.50/dsp/ &&
-     install -m 0755 /tmp/qairt-2.50/bin/* /opt/qairt-2.50/bin/" && rm -rf /tmp/qairt-2.50'
-   ```
-
-   No daemon restart is needed: the launch file points only the YOLOE container at these libraries, through `LD_LIBRARY_PATH` and `ADSP_LIBRARY_PATH`.
-
-5. **Install the mission model.** Still in `~/QB3rt_rb3`, check the checksum of `yoloe_mission_qa250.bin` from the repo (or download it from [GitHub](https://github.com/briandeegan82/QB3rt_rb3/raw/main/ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin)) and copy it to the robot:
-
-   ```bash
-   M=ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin
-   sha256sum $M
-   # must print 3f4ab2047ac863f1a2da80c88cd17a14378f9b12b9b2380db4265bca8dad1aaf
-   ssh $U 'mkdir -p /home/ubuntu/models'
-   rsync -z $M $U:/home/ubuntu/models/
-   ```
-
-   If you exported your own model in step 1d, you still need steps 1 to 4; only this step changes.
-
-6. **Verify on the robot.** Log in with an interactive `ssh $U`, start the base stack with `qb3rt-up full_stack`, and run the whole 1a checklist again: every line should now pass. Two further checks:
-
-   ```bash
-   strings -n 6 /home/ubuntu/models/yoloe_mission_qa250.bin \
-     | grep -oE "v2\.[0-9]{2}\.[0-9]+\.[0-9]{6,}" | sort -u     # v2.50.0.260828221209: a 2.50 build
-   ls -l /opt/qairt-2.50/lib /opt/qairt-2.50/dsp /opt/qairt-2.50/bin   # 10 + 8 + 1 files, owned by root
-   ```
-
-   Then launch the mission model as in 1b and look for the backend line:
-
-   ```bash
-   journalctl -u qb3rt-addon@yolo_npu | grep 'QAIRT backend'
-   # yolo_npu: QAIRT backend /opt/qairt-2.50/lib/libQnnHtp.so (qairt:=auto)
-   ```
-
-   If the line names `/usr/lib/libQnnHtp.so`, or the log shows `Using newer context binary on old SDK`, the launch didn't find `/opt/qairt-2.50/lib/libQnnHtp.so`: redo step 4. If `ros2 launch QB3rt yolo_npu.launch.py --show-args` has no `qairt` argument, step 2 didn't reach the robot: check its output for errors. Once the backend line is right, carry on with 1b and 1c.
-
 ### 1b. Launch
 
-Run the launch twice over 1b/1c: first the fleet's COCO model, then the fleet's mission model. `$C` is the config directory defined in 1a. YOLOE runs as a service beside `full_stack` — `qb3rt-up --addon` starts it as the `qb3rt-addon@yolo_npu` unit without stopping the base stack. Its log is `journalctl -u qb3rt-addon@yolo_npu -f`, which is where the QAIRT backend line and the `Hz in` rates appear. Stop it with `qb3rt-down --addon yolo_npu`; rerunning `qb3rt-up --addon ...` restarts it, which is how you switch models or turn the overlay on for steps 2 and 4. A restart waits about 90 s for the NPU to settle after the previous instance stops — that wait is built in, so just rerun the command. If the add-on dies (the overlay crash below, or a hardware fault) it drops out of `qb3rt-status` instead of looking alive but doing nothing. Note that a main `qb3rt-up` or a plain `qb3rt-down` also stops the add-on, so restart it afterwards.
+Run the launch twice over 1b/1c: first the fleet's COCO model, then the fleet's mission model. `$C` is the config directory defined in 1a. YOLOE runs as a service beside `full_stack` — `qb3rt-up --addon` starts it as the `qb3rt-addon@yolo_npu` unit without stopping the base stack. Its log is `journalctl -u qb3rt-addon@yolo_npu -f`, which is where the QAIRT backend line and the `Hz in` rates appear. Stop it with `qb3rt-down --addon yolo_npu`; rerunning `qb3rt-up --addon ...` restarts it, which is how you switch models or turn the overlay on for steps 2 and 4. If the add-on dies, it drops out of `qb3rt-status` instead of looking alive but doing nothing. Note that a main `qb3rt-up` or a plain `qb3rt-down` also stops the add-on, so restart it afterwards.
 
 COCO first:
 
@@ -362,10 +238,14 @@ class StampCheck(Node):
 
 def main():
     rclpy.init()
+    node = StampCheck()
     try:
-        rclpy.spin(StampCheck())
-    except SystemExit:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, SystemExit):
         pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':
@@ -392,7 +272,7 @@ cat $(ros2 pkg prefix qrb_ros_camera)/share/qrb_ros_camera/config/camera_info_im
 Read `width`, `height`, `fx, fy, cx, cy`, `distortion_model` and the distortion coefficients from both, and ask whether they describe the image you actually receive. Two checks expose most problems:
 
 - **Is the principal point near the image centre?** For a 1920 x 1080 stream, `cx, cy` should be near (960, 540). Values near the centre of some larger image mean the file describes the full sensor (the IMX577 is 4056 x 3040), not this stream.
-- **Does the focal length agree with the field of view?** A pinhole camera with image width W and horizontal field of view HFOV has
+- **Does the focal length agree with the field of view?** A pinhole camera with image width $W$ and horizontal field of view $\mathrm{HFOV}$ has
 
 ```math
 f_x = \frac{W/2}{\tan(\mathrm{HFOV}/2)}
@@ -406,14 +286,14 @@ A file or topic can fail one check and pass the other — for example, a princip
 
 Sanity-check the result against your HFOV estimate and your expected `cx, cy`. If `fx` disagrees with the FOV by more than a few percent, recheck the board's square size and the image size you calibrated at.
 
-Then find out how the preprocess node resized. The repo sets the target to 640 x 640 but the resize lives inside the `qrb_ros_cv_tensor_common_process` component, whose source isn't in this repo, so check it on the image rather than guessing. Restart the add-on with `enable_overlay:=true` (`qb3rt-up --addon yolo_npu ... enable_overlay:=true`, 1b) and first check what the overlay is drawn on: `ros2 topic echo /yoloe/overlay --field width --once` (and `--field height`). The launch file doesn't remap the overlay node's image input, so also run `ros2 node info /yoloe_overlay_node` to see which image it subscribes to. The rest of this check, and `project_scan.py` in step 4, assume a 640 x 640 overlay; if yours is 1920 x 1080, it can't show stretch or letterbox, and `project_scan.py` must skip `cam_to_model`. Then view `/yoloe/overlay` in RViz next to the raw camera image. If round things look oval, it's stretched; if there are black bars at the top and bottom, it's letterboxed. A decisive test: put a square object (a sticky note works) in front of the camera and measure its pixel width and height on the overlay — stretch makes it about 1.8 times taller than wide (the width is squeezed by 3, the height only by 1.69), letterbox keeps it square. The two mappings back to camera pixels are:
+Then find out how the preprocess node resized. The repo sets the target to 640 x 640 but the resize lives inside the `qrb_ros_cv_tensor_common_process` component, whose source isn't in this repo, so check it on the image rather than guessing. Restart the add-on with `enable_overlay:=true` (`qb3rt-up --addon yolo_npu ... enable_overlay:=true`, 1b) and first check what the overlay is drawn on: `ros2 topic echo /yoloe/overlay --field width --once` (and `--field height`). The launch file doesn't remap the overlay node's image input, so also run `ros2 node info /yoloe_overlay_node` to see which image it subscribes to. The rest of this check, and `project_scan.py` in step 4, assume a 640 x 640 overlay; if yours is 1920 x 1080, it can't show stretch or letterbox, and `project_scan.py` must skip `cam_to_model`. Then view `/yoloe/overlay` in RViz (note: `/cam0_stream1` is raw `NV12`, which RViz's `Image` display cannot render directly). If round things look oval, it's stretched; if there are black bars at the top and bottom, it's letterboxed. A decisive test: put a square object (a sticky note works) in front of the camera and measure its pixel width and height on the overlay — stretch makes it about 1.8 times taller than wide (the width is squeezed by 3, the height only by 1.69), letterbox keeps it square. The two mappings back to camera pixels are:
 
 ```math
 \text{stretch: } u_c = 3u,\; v_c = 1.6875\,v \qquad
 \text{letterbox: } u_c = 3u,\; v_c = 3\,(v - 140)
 ```
 
-where (u, v) is a point in the 640-frame and (u\_c, v\_c) is the same point in the 1920 x 1080 image. The 140 is the padding at the top: (640 − 1080/3) / 2.
+where $(u, v)$ is a point in the 640-frame and $(u_c, v_c)$ is the same point in the 1920 x 1080 image. The 140 is the padding at the top: $(640 - 1080/3) / 2$.
 
 Then undistort. With distortion, the normalised ray is *not* `(u - cx)/fx`: feed the box edge pixels through the undistortion function that matches your model — `cv2.fisheye.undistortPoints` (k1..k4) for equidistant, `cv2.undistortPoints` (k1, k2, p1, p2, k3) for plumb_bob — with your calibrated K and no P, to get unit-plane coordinates, then form the ray. The scripts in steps 4 and 9 read a `distortion_model` parameter — `equidistant` or `plumb_bob` — so set it to your choice and give the matching number of coefficients (4 for equidistant, 5 for plumb_bob) in `distortion`. Distortion is smallest at the centre and largest at the edges, so compare your bearing with and without undistortion for an object at the centre and at the edge of the image, and put both numbers in the report.
 
@@ -619,7 +499,14 @@ class ProjectScan(Node):
 
 def main():
     rclpy.init()
-    rclpy.spin(ProjectScan())
+    node = ProjectScan()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':
@@ -660,7 +547,7 @@ Steps 5 to 8 explain what the localiser in step 9 does. Read them first, then ru
 
 For the left edge, right edge and centre of the box:
 
-1. Take the pixel in the 640-frame (u, v), using the box centre row for v.
+1. Take the pixel in the 640-frame $(u, v)$, using the box centre row for $v$.
 2. Map it back to the 1920 x 1080 image with the formula from step 2.
 3. Undistort it with your model's function (step 2) to a unit-plane point, and rotate it into the lidar frame with the transform from TF:
 
@@ -708,7 +595,7 @@ Do this instead of using "now":
 3. Express that scan's points in the lidar frame *as it was at the image time* (explained below).
 4. Turn the final point into the map frame using TF at the image time as well.
 
-**How the time-shift works.** The scan's points are in `laser_frame` at the scan time t_s. You want them in `laser_frame` at the image time t_i: where the lidar would have seen them had it scanned at the instant the picture was taken. A plain TF lookup can't do this, because it relates two frames at *one* time. `lookup_transform_full` relates two frames at two *different* times by routing through a **fixed frame**, one you are willing to treat as not moving between t_s and t_i:
+**How the time-shift works.** The scan's points are in `laser_frame` at the scan time $t_s$. You want them in `laser_frame` at the image time $t_i$: where the lidar would have seen them had it scanned at the instant the picture was taken. A plain TF lookup can't do this, because it relates two frames at *one* time. `lookup_transform_full` relates two frames at two *different* times by routing through a **fixed frame**, one you are willing to treat as not moving between $t_s$ and $t_i$:
 
 ```
 laser_frame @ t_s  ->  odom @ t_s   (where the lidar was when it scanned)
@@ -725,7 +612,7 @@ tf = self.tf.lookup_transform_full(
     self.g('fixed_frame'), Duration(seconds=0.1))              # fixed frame (odom), timeout
 ```
 
-Why `odom` and not `map`? Both are world-fixed in principle, but `map → odom` jumps whenever the localisation corrects its estimate: slam\_toolbox while mapping, AMCL when you localise on a saved map (`localization.launch.py`). If a correction lands between t_s and t_i, routing through `map` would add that jump to your points. `odom` drifts slowly but never jumps, and over 0.1 s its drift is negligible. This only works if the image and scan stamps come from the same clock, which you checked in step 1e.
+Why `odom` and not `map`? Both are world-fixed in principle, but `map → odom` jumps whenever the localisation corrects its estimate: slam\_toolbox while mapping, AMCL when you localise on a saved map (`localization.launch.py`). If a correction lands between $t_s$ and $t_i$, routing through `map` would add that jump to your points. `odom` drifts slowly but never jumps, and over 0.1 s its drift is negligible. This only works if the image and scan stamps come from the same clock, which you checked in step 1e.
 
 To show it matters, add an ablation to your report: run the same trials with the time-shift switched off and compare the errors, moving and stationary.
 
@@ -988,7 +875,14 @@ class Localiser(Node):
 
 def main():
     rclpy.init()
-    rclpy.spin(Localiser())
+    node = Localiser()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':
@@ -1006,7 +900,7 @@ Known gaps, on purpose:
 Exercises. Each one is something the brief or this guide asks for that the starter code doesn't yet do, or a part of it you should be able to defend:
 
 1. **Per-class depth offset.** Step 6 asks for a per-class offset in YAML; the code has one number. Change `depth_offset` to a per-class mapping and use the detection's class.
-2. **Time-shift switch.** The step 7 ablation needs the time-shift on and off. Add a `time_shift` parameter that, when false, uses the latest scan as-is without `lookup_transform_full`.
+2. **Time-shift switch.** The step 7 ablation needs the time-shift on and off. Add a `time_shift` parameter that, when false, uses the latest scan (`self.scans[-1]`) as-is without `lookup_transform_full` and looks up `map ← laser` at `Time()` ("now") instead of `Time.from_msg(stamp)`.
 3. **The wrap.** Suppose the box straddles ±π in the lidar frame. Trace `range_cluster` by hand with a few made-up angles and show that it still selects the right points, or fix it if it doesn't.
 4. **TF failure.** Stop whatever publishes `map → odom` (slam\_toolbox while mapping, AMCL in `localization.launch.py`) for a few seconds while the node runs, then restart it. What does the node log, does it recover, and is that the behaviour you want? (Stopping a static transform publisher won't test this: static transforms stay in the TF buffer once received.)
 5. **Confirmation.** Feed `add_estimate` a scripted sequence (for example, ten good estimates with three outliers mixed in) and check when it confirms and what it reports. Then justify your `n_confirm` and `spread_max`.
@@ -1021,18 +915,18 @@ The brief asks for an error budget: one object, five surveyed positions, and an 
 3. For each, split the error into a **range** part (along the line from the camera to the object) and a **cross-range** part (perpendicular to it).
 4. Repeat a couple of positions while the robot is moving, with and without the time-shift from step 7.
 
-With `o` the camera's map position and `u` the unit vector from `o` to the true position, the components of an estimate `p` are:
+With $\mathbf{o}$ the camera's map position and $\mathbf{u}$ the unit vector from $\mathbf{o}$ to the true position $\mathbf{p}_{\mathrm{true}}$, the components of an estimate $\mathbf{p}$ are:
 
 ```math
-e_r = (\mathbf{p} - \mathbf{p}_{true}) \cdot \mathbf{u}, \qquad
-e_c = (\mathbf{p} - \mathbf{p}_{true}) \times \mathbf{u}
+e_r = (\mathbf{p} - \mathbf{p}_{\mathrm{true}}) \cdot \mathbf{u}, \qquad
+e_c = (\mathbf{p} - \mathbf{p}_{\mathrm{true}}) \times \mathbf{u}
 ```
 
-In 2D the cross product is the scalar a\_x u\_y − a\_y u\_x, where a = p − p\_true. With this sign convention, positive `e_c` means the estimate lies to the right of the camera-to-object line, as seen from the camera.
+In 2D the cross product is the scalar $a_x u_y - a_y u_x$, where $\mathbf{a} = \mathbf{p} - \mathbf{p}_{\mathrm{true}}$. With this sign convention, positive $e_c$ means the estimate lies to the right of the camera-to-object line, as seen from the camera.
 
 Record one row per position, using the mean and standard deviation of the ~20 raw estimates:
 
-| Position | True (x, y) | Range from camera (m) | Bearing (°) | Mean `e_r` (cm) | Std `e_r` (cm) | Mean `e_c` (cm) | Std `e_c` (cm) | Moving? | Time-shift |
+| Position | True (x, y) | Range from camera (m) | Bearing (°) | Mean $e_r$ (cm) | Std $e_r$ (cm) | Mean $e_c$ (cm) | Std $e_c$ (cm) | Moving? | Time-shift |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | P1 | | | | | | | | no | on |
 | … | | | | | | | | | |
@@ -1044,21 +938,21 @@ Then each error source leaves a different signature:
 | Camera extrinsic (yaw, translation) | Not an error proportional to range: the camera only chooses which lidar points to use, so a small error slides the selection window. It shows up as a cross-range bias of at most about the object's half-width (the window catches one side of the object), or as missed or wrong clusters once the window slides off it, worst for narrow or distant objects | Compare cross-range error and how often a cluster is found at near and far, left and right positions; vary `central_fraction` |
 | Lidar extrinsic (`laser_frame` mount, `lidar_yaw`) | Moves the point directly: a yaw error gives cross-range error that grows with range; a translation error is a constant offset in the robot frame | Surveyed object at several bearings and ranges; check `tf2_echo base_link laser_frame` against the robot |
 | Timing | Error only when moving, along the direction of motion | Stationary against moving, time-shift on against off |
-| Clustering and depth offset | A constant range error, about the object's radius, differing by class | Mean of `e_r` over all positions, before and after setting `depth_offset` |
+| Clustering and depth offset | A constant range error, about the object's radius, differing by class | Mean of $e_r$ over all positions, before and after setting `depth_offset` |
 | Lidar range noise | Scatter among repeated stationary estimates | Standard deviation at one position |
 | Localisation (SLAM or AMCL, and odometry) | One shift shared by every object in a run, differing between runs | Same object and position over several runs and maps |
-| Confirmation rule | The reported mean differing from the best estimate, depending on N | Vary `n_confirm` and `spread_max` |
+| Confirmation rule | The reported mean differing from the best estimate, depending on $N$ | Vary `n_confirm` and `spread_max` |
 
 Now argue from the numbers. A good write-up says, for each source, how many centimetres it contributes, how you know, and which one dominates your final position error, including the ones that turned out to be negligible.
 
 ## Debug
 
-Run these in a shell on the robot (an interactive `ssh` login is fine). A one-shot `ssh <unit> 'ros2 ...'` skips the login setup, so it has no `ROS_DOMAIN_ID` or CycloneDDS settings and sees no topics. In that case export them first; the values are in the environment of any running launch (`tr '\0' '\n' < /proc/<pid>/environ | grep -E '^(ROS_|RMW_|CYCLONEDDS)'`).
+Run these in a shell on the robot (an interactive `ssh` login is fine; for a one-shot command use `ssh <unit> 'bash -lc "ros2 ..."'` as in 1a so `ROS_DOMAIN_ID` and CycloneDDS are set).
 
 | What you see | Usually | Try |
 | --- | --- | --- |
 | No detections at all | YOLOE isn't running, the object isn't in view, or the score threshold is too high | `ros2 topic hz /yoloe/detections` with the object in front; lower the `score_thres` launch argument (the detector's threshold, separate from the localiser's `min_score`) while testing |
-| `Inference graph init fail` / `Failed to find graph` at launch | Model built for the wrong arch (V73 vs V68), a 2.50 model on the 2.49 runtime (`Using newer context binary on old SDK`), or a previous crash left the DSP graph wedged | Try `yoloe_coco80_qa249.bin` (1a); check the QAIRT backend log line (1a); if `/opt/qairt-2.50` is missing, install it (*Upgrade a unit to QAIRT 2.50 yourself*, after 1a); for a wedged graph see 1b |
+| `Inference graph init fail` / `Failed to find graph` at launch | Model built for the wrong arch (V73 vs V68), a 2.50 model on the 2.49 runtime (`Using newer context binary on old SDK`), or a previous crash left the DSP graph wedged | Try `yoloe_coco80_qa249.bin` (1a); check the QAIRT backend log line (1a); if `/opt/qairt-2.50` is missing, install it ([Appendix](#appendix-upgrade-a-unit-to-qairt-250-yourself)); for a wedged graph see 1b |
 | Whole YOLOE pipeline died at once | `enable_overlay:=true` crashed on an out-of-bounds box — it takes the container (camera + inference) with it | `qb3rt-status` shows the add-on is down; rerun `qb3rt-up --addon ...` with `enable_overlay:=false` (the settle wait is built in) |
 | Localiser exits at startup | `intrinsics`, `distortion` or `room2_limits` not set or the wrong length | The fatal log line names the parameter |
 | Detections but never a report | Target name doesn't match, or a TF error | Read the node's log; print the class names and compare them as strings |
@@ -1066,7 +960,7 @@ Run these in a shell on the robot (an interactive `ssh` login is fine). A one-sh
 | Estimates at the wrong angle, always | Yaw, the resize assumption, or mixing 640 and 1920 pixels | Step 4 overlay; flip `letterbox` |
 | Estimates land on the wall behind | Central fraction too wide, gap too large, or the lidar plane misses the object | Tighten both; check the object crosses the scan plane |
 | Estimates scatter when the robot turns | The time-shift is missing or stamps are off | Compare stationary and moving errors |
-| A cone reported at the wrong depth | `depth_offset` unset | `e_r` mean from step 10 |
+| A cone reported at the wrong depth | `depth_offset` unset | $e_r$ mean from step 10 |
 | Two reports, or none visible to a late subscriber | The one-shot flag, or the QoS | `ros2 topic info /mission/object_location -v` should say reliable and transient local; echo it with matching QoS flags |
 | Wrong object reported | Name matching, or the distractor in Room 1 | Print `class_id`; check the Room 2 gate |
 | Slow to confirm | `n_confirm` too high, spread too tight, or the NPU rate has dropped | `ros2 topic hz /yoloe/detections`; relax one at a time |
@@ -1085,3 +979,127 @@ In the report, the Part 3 section wants:
 - the error budget table, with the data behind each claim;
 - the time-shift ablation;
 - a short, honest paragraph on what failed and what you changed because of it.
+
+## Appendix: Upgrade a unit to QAIRT 2.50 yourself
+
+Skip this if the 1a checklist passed. Do it if any of these are missing: `yoloe_mission_qa250.bin`, `/opt/qairt-2.50/lib/libQnnHtp.so`, the `qairt` launch argument, or `yoloe_mission.yaml` and `yoloe_mission_quant.yaml` in `$C`. The mission model needs all three of the pieces below, so install all three even if only one looks missing:
+
+| Piece | Goes to (robot) | Comes from |
+| --- | --- | --- |
+| QB3rt payload: `yolo_npu.launch.py` with the `qairt` argument, the mission label and quant YAMLs, and the current `qb3rt-up` / `qb3rt-down` / `qb3rt-status` | `/opt/qb3rt/install/share/QB3rt`, `/usr/local/bin` | The public QB3rt repo, pushed by `deploy/update_project.sh` |
+| QAIRT 2.50 runtime, about 110 MB of libraries | `/opt/qairt-2.50/{lib,dsp,bin}` | Qualcomm's public QAIRT SDK zip (about 2.6 GB, no account needed), extracted by `fetch-qairt250.sh` |
+| Mission model | `/home/ubuntu/models/yoloe_mission_qa250.bin` | The public QB3rt repo (`ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin`) |
+
+This is the same install the demonstrators' Ansible run does, with the same paths and permissions, so a later fleet update won't conflict with it. It doesn't touch the system QAIRT 2.49 packages, so the COCO and lab models keep working. To undo it, run `sudo rm -rf /opt/qairt-2.50` on the robot; `qairt:=auto` then falls back to the system runtime.
+
+Run steps 1 to 5 on your laptop, which must be on the same network as the robot. You need Linux, or WSL on Windows, with `git`, `rsync`, `curl`, `unzip` and `sha256sum`, and about 3 GB of free disk. On the robot you only need the `ubuntu` login, which already has passwordless sudo.
+
+1. **Set up SSH and stop the stack.** `update_project.sh` opens about a dozen SSH connections, so install a key first or you will type the password at every one:
+
+   ```bash
+   U=ubuntu@<unit-ip>
+   ls ~/.ssh/id_*.pub || ssh-keygen -t ed25519     # make a key if you have none
+   ssh-copy-id $U                                  # once per robot
+   ssh $U qb3rt-down
+   ```
+
+   `$U` only lasts for that shell, like `$C`.
+
+2. **Update the QB3rt payload.** Get the repo, back up what the update overwrites, preview the changes, then run it:
+
+   ```bash
+   git clone https://github.com/briandeegan82/QB3rt_rb3.git ~/QB3rt_rb3   # or, if you have it: git -C ~/QB3rt_rb3 pull
+   cd ~/QB3rt_rb3
+   ```
+
+   **Back up** everything `update_project.sh` replaces, into one file in the robot's home directory (about 0.5 MB):
+
+   ```bash
+   ssh $U 'cd / && sudo tar -czf /home/ubuntu/qb3rt-backup-before-qairt250.tgz \
+     opt/qb3rt/install/share/QB3rt \
+     opt/qb3rt/install/lib/wave_rover_controller/wave_rover_bridge.py \
+     opt/qb3rt/install/share/wave_rover_controller/config/wave_rover_bridge.yaml \
+     etc/qb3rt/cyclonedds.xml etc/profile.d/qb3rt-ros-env.sh \
+     etc/sysctl.d/98-agv-dds.conf etc/udev/rules.d/80-movidius.rules \
+     usr/local/bin/qb3rt-up usr/local/bin/qb3rt-down usr/local/bin/qb3rt-status usr/local/lib/qb3rt \
+     etc/systemd/system/qb3rt-stack@.service etc/systemd/system/qb3rt-addon@.service &&
+     sudo chown ubuntu:ubuntu /home/ubuntu/qb3rt-backup-before-qairt250.tgz'
+   ```
+
+   **Preview** what the update would do to the project files. This changes nothing on the robot:
+
+   ```bash
+   for d in launch config urdf scripts behavior_trees rviz docs; do
+     rsync -rcn --delete -i --exclude=__pycache__ $d/ $U:/opt/qb3rt/install/share/QB3rt/$d/ | sed "s|^|$d/: |"
+   done
+   ```
+
+   Each line is one file: `<f+++++++++` is a new file, `<fcsT......` is a file whose contents will change, and `*deleting` is a file that will be **removed**. No output means nothing changes. Expect changes in `launch/`, `config/` and `docs/` on a unit that hasn't been updated. Look hard at any `*deleting` line, and at any changed file you remember editing: that's your work. Copy it to your home directory before going on. Any change in `launch/lidar_nav.launch.py` is the Part 2 fix that stops AMCL running alongside slam\_toolbox, so if your Part 2 Nav2 tuning was done without it, recheck the tuning afterwards.
+
+   **Run the update:**
+
+   ```bash
+   deploy/update_project.sh --host $U
+   ```
+
+   It mirrors `launch/`, `config/`, `scripts/` and the other project directories into `/opt/qb3rt/install/share/QB3rt` **with delete**, exactly as the preview showed. Keep your own files in your home directory on the robot, as steps 1d and 2 already ask. It also replaces the fleet's DDS and ROS environment files under `/etc`, the rover bridge and the `qb3rt-*` commands. Your unit's own settings aren't touched: domain ID, DDS peer, `drive_inverted` and `lidar_yaw` in `/etc/qb3rt/unit_conventions.yaml`, the serial udev rules and Wi-Fi. It finishes by running `qb3rt-status`.
+
+   To **undo** it, restore the backup on the robot (`ssh $U`, then):
+
+   ```bash
+   cd / && sudo tar --warning=no-timestamp -xzf /home/ubuntu/qb3rt-backup-before-qairt250.tgz && sudo systemctl daemon-reload
+   ```
+
+   This puts every backed-up file back as it was. Files the update *added* stay, but nothing old refers to them.
+
+3. **Fetch the QAIRT 2.50 runtime.** Still in `~/QB3rt_rb3`:
+
+   ```bash
+   QAIRT_ZIP=~/Downloads/qairt-v2.50.0.260828.zip \
+     ansible/roles/qb3rt_base/files/qairt250/fetch-qairt250.sh
+   ```
+
+   The script downloads the SDK from Qualcomm's Software Center to `QAIRT_ZIP`, resuming if the CDN stalls, and checks its SHA-256. It then extracts the 19 runtime files into `ansible/roles/qb3rt_base/files/qairt250/{lib,dsp,bin}/` (git ignores them) and lists them. If a classmate already has the zip, point `QAIRT_ZIP` at their copy and the download is skipped; the checksum is still verified. If the checksum fails, delete the zip and run the script again.
+
+4. **Install the runtime on the robot:**
+
+   ```bash
+   Q=ansible/roles/qb3rt_base/files/qairt250
+   rsync -rz $Q/lib $Q/dsp $Q/bin $U:/tmp/qairt-2.50/
+   ssh $U 'sudo sh -c "
+     for d in lib dsp bin; do install -d -m 0755 /opt/qairt-2.50/\$d; done &&
+     install -m 0644 /tmp/qairt-2.50/lib/* /opt/qairt-2.50/lib/ &&
+     install -m 0644 /tmp/qairt-2.50/dsp/* /opt/qairt-2.50/dsp/ &&
+     install -m 0755 /tmp/qairt-2.50/bin/* /opt/qairt-2.50/bin/" && rm -rf /tmp/qairt-2.50'
+   ```
+
+   No daemon restart is needed: the launch file points only the YOLOE container at these libraries, through `LD_LIBRARY_PATH` and `ADSP_LIBRARY_PATH`.
+
+5. **Install the mission model.** Still in `~/QB3rt_rb3`, check the checksum of `yoloe_mission_qa250.bin` from the repo (or download it from [GitHub](https://github.com/briandeegan82/QB3rt_rb3/raw/main/ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin)) and copy it to the robot:
+
+   ```bash
+   M=ansible/roles/qb3rt_base/files/yoloe/yoloe_mission_qa250.bin
+   sha256sum $M
+   # must print 3f4ab2047ac863f1a2da80c88cd17a14378f9b12b9b2380db4265bca8dad1aaf
+   ssh $U 'mkdir -p /home/ubuntu/models'
+   rsync -z $M $U:/home/ubuntu/models/
+   ```
+
+   If you exported your own model in step 1d, you still need steps 1 to 4; only this step changes.
+
+6. **Verify on the robot.** Log in with an interactive `ssh $U`, start the base stack with `qb3rt-up full_stack`, and run the whole 1a checklist again: every line should now pass. Two further checks:
+
+   ```bash
+   strings -n 6 /home/ubuntu/models/yoloe_mission_qa250.bin \
+     | grep -oE "v2\.[0-9]{2}\.[0-9]+\.[0-9]{6,}" | sort -u     # v2.50.0.260828221209: a 2.50 build
+   ls -l /opt/qairt-2.50/lib /opt/qairt-2.50/dsp /opt/qairt-2.50/bin   # 10 + 8 + 1 files, owned by root
+   ```
+
+   Then launch the mission model as in 1b and look for the backend line:
+
+   ```bash
+   journalctl -u qb3rt-addon@yolo_npu | grep 'QAIRT backend'
+   # yolo_npu: QAIRT backend /opt/qairt-2.50/lib/libQnnHtp.so (qairt:=auto)
+   ```
+
+   If the line names `/usr/lib/libQnnHtp.so`, or the log shows `Using newer context binary on old SDK`, the launch didn't find `/opt/qairt-2.50/lib/libQnnHtp.so`: redo step 4. If `ros2 launch QB3rt yolo_npu.launch.py --show-args` has no `qairt` argument, step 2 didn't reach the robot: check its output for errors. Once the backend line is right, carry on with 1b and 1c.
